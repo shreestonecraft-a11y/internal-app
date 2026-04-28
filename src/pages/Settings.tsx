@@ -1,14 +1,9 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings as SettingsIcon, LogOut, User, Users, Shield, Trash2, ExternalLink, Loader2, Building2, Save } from "lucide-react";
+import { Settings as SettingsIcon, LogOut, User, Users, Shield, Trash2, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import AppLayout from "@/components/layout/AppLayout";
 import { useAuth, logout, type Profile } from "@/lib/auth";
-import { useBusinessSettings, useUpdateBusinessSettings } from "@/lib/hooks/useBusinessSettings";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
@@ -34,21 +29,6 @@ export default function SettingsPage() {
     queryFn: fetchProfiles,
     enabled: isOwner,
   });
-
-  const { data: business } = useBusinessSettings();
-  const updateBusiness = useUpdateBusinessSettings();
-  const [biz, setBiz] = useState({
-    businessName: '', gstin: '', address: '', state: '', phone: '', email: '',
-    defaultGstPercent: 18, defaultHsn: '6802',
-  });
-  useEffect(() => { if (business) setBiz(business); }, [business]);
-
-  function saveBusiness() {
-    updateBusiness.mutate(biz, {
-      onSuccess: () => toast.success("Business details saved"),
-      onError: (e) => toast.error(`Save failed: ${(e as Error).message}`),
-    });
-  }
 
   const setRole = useMutation({
     mutationFn: async ({ id, role }: { id: string; role: 'owner' | 'staff' }) => {
@@ -104,79 +84,6 @@ export default function SettingsPage() {
             <p className="text-sm text-muted-foreground">Loading…</p>
           )}
         </section>
-
-        {/* Business Details — owner only */}
-        {isOwner && (
-          <section className="glass-card rounded-xl p-5">
-            <h2 className="font-display text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-accent" />Business Details
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              These appear on your invoices. GSTIN and address are required for valid tax invoices.
-            </p>
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Business Name</Label>
-                  <Input value={biz.businessName} onChange={e => setBiz({ ...biz, businessName: e.target.value })} className="rounded-xl" />
-                </div>
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">GSTIN</Label>
-                  <Input
-                    value={biz.gstin}
-                    onChange={e => setBiz({ ...biz, gstin: e.target.value.toUpperCase() })}
-                    placeholder="15-character GSTIN"
-                    maxLength={15}
-                    className="rounded-xl font-mono uppercase"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Address</Label>
-                <Textarea
-                  value={biz.address}
-                  onChange={e => setBiz({ ...biz, address: e.target.value })}
-                  placeholder="Full business address"
-                  className="rounded-xl min-h-[60px]"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">State</Label>
-                  <Input value={biz.state} onChange={e => setBiz({ ...biz, state: e.target.value })} placeholder="e.g. Rajasthan" className="rounded-xl" />
-                </div>
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Phone</Label>
-                  <Input value={biz.phone} onChange={e => setBiz({ ...biz, phone: e.target.value })} className="rounded-xl" />
-                </div>
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Email</Label>
-                  <Input type="email" value={biz.email} onChange={e => setBiz({ ...biz, email: e.target.value })} className="rounded-xl" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Default GST %</Label>
-                  <Input
-                    type="number"
-                    value={biz.defaultGstPercent}
-                    onChange={e => setBiz({ ...biz, defaultGstPercent: parseFloat(e.target.value) || 0 })}
-                    className="rounded-xl"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Default HSN</Label>
-                  <Input value={biz.defaultHsn} onChange={e => setBiz({ ...biz, defaultHsn: e.target.value })} className="rounded-xl font-mono" />
-                </div>
-              </div>
-              <Button onClick={saveBusiness} disabled={updateBusiness.isPending} className="bg-accent text-accent-foreground rounded-xl">
-                {updateBusiness.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                Save Business Details
-              </Button>
-            </div>
-          </section>
-        )}
 
         {/* User Management — owner only */}
         {isOwner && (

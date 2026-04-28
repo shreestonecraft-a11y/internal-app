@@ -38,9 +38,6 @@ export interface InvoiceLineItem {
   size: string;
   packing: string;
   quantity: number;
-  rate: number;
-  hsnCode: string;
-  gstPercent: number;
   image?: string;
 }
 
@@ -48,30 +45,9 @@ export interface Invoice {
   id: string;
   number: string;
   date: string;
-  customerName: string;
-  customerNotes: string;
-  customerGstin: string;
-  customerAddress: string;
-  isInterState: boolean;
+  notes: string;
   items: InvoiceLineItem[];
-  subtotal: number;
-  cgstAmount: number;
-  sgstAmount: number;
-  igstAmount: number;
-  taxTotal: number;
-  total: number;
   createdAt: string;
-}
-
-export interface BusinessSettings {
-  businessName: string;
-  gstin: string;
-  address: string;
-  state: string;
-  phone: string;
-  email: string;
-  defaultGstPercent: number;
-  defaultHsn: string;
 }
 
 export const CATEGORIES = [
@@ -124,17 +100,7 @@ interface InvoiceRow {
   id: string;
   number: string;
   date: string;
-  customer_name: string;
   customer_notes: string;
-  customer_gstin: string;
-  customer_address: string;
-  is_inter_state: boolean;
-  subtotal: number;
-  cgst_amount: number;
-  sgst_amount: number;
-  igst_amount: number;
-  tax_total: number;
-  total: number;
   created_at: string;
   invoice_line_items?: Array<{
     id: string;
@@ -143,9 +109,6 @@ interface InvoiceRow {
     size: string;
     packing: string;
     quantity: number;
-    rate: number;
-    hsn_code: string;
-    gst_percent: number;
     image_url: string | null;
     position: number;
   }>;
@@ -162,27 +125,14 @@ function mapInvoice(r: InvoiceRow): Invoice {
       size: li.size,
       packing: li.packing,
       quantity: Number(li.quantity),
-      rate: Number(li.rate),
-      hsnCode: li.hsn_code ?? '6802',
-      gstPercent: Number(li.gst_percent ?? 18),
       image: li.image_url ?? undefined,
     }));
   return {
     id: r.id,
     number: r.number,
     date: r.date,
-    customerName: r.customer_name,
-    customerNotes: r.customer_notes,
-    customerGstin: r.customer_gstin ?? '',
-    customerAddress: r.customer_address ?? '',
-    isInterState: !!r.is_inter_state,
+    notes: r.customer_notes ?? '',
     items,
-    subtotal: Number(r.subtotal),
-    cgstAmount: Number(r.cgst_amount ?? 0),
-    sgstAmount: Number(r.sgst_amount ?? 0),
-    igstAmount: Number(r.igst_amount ?? 0),
-    taxTotal: Number(r.tax_total ?? 0),
-    total: Number(r.total),
     createdAt: r.created_at,
   };
 }
@@ -389,13 +339,10 @@ export async function nextInvoiceNumber(): Promise<string> {
   return `INV-${String(isNaN(max) ? 1001 : max + 1).padStart(4, '0')}`;
 }
 
-export async function createInvoice(inv: Omit<Invoice, 'id' | 'createdAt' | 'subtotal' | 'total' | 'cgstAmount' | 'sgstAmount' | 'igstAmount' | 'taxTotal'>): Promise<Invoice> {
+export async function createInvoice(inv: Omit<Invoice, 'id' | 'createdAt'>): Promise<Invoice> {
   const { data, error } = await supabase.rpc('create_invoice', {
-    p_customer_name: inv.customerName,
-    p_customer_notes: inv.customerNotes,
-    p_customer_gstin: inv.customerGstin,
-    p_customer_address: inv.customerAddress,
-    p_is_inter_state: inv.isInterState,
+    p_customer_name: '',
+    p_customer_notes: inv.notes,
     p_date: inv.date.slice(0, 10),
     p_items: inv.items.map(it => ({
       stone_id: it.stoneId ?? null,
@@ -403,9 +350,7 @@ export async function createInvoice(inv: Omit<Invoice, 'id' | 'createdAt' | 'sub
       size: it.size,
       packing: it.packing,
       quantity: it.quantity,
-      rate: it.rate,
-      hsn_code: it.hsnCode || '6802',
-      gst_percent: it.gstPercent ?? 18,
+      rate: 0,
       image_url: it.image ?? null,
     })),
   });
@@ -423,46 +368,6 @@ export async function createInvoice(inv: Omit<Invoice, 'id' | 'createdAt' | 'sub
 
 export async function deleteInvoice(id: string): Promise<void> {
   const { error } = await supabase.from('invoices').delete().eq('id', id);
-  if (error) throw error;
-}
-
-// =========================================
-// Business settings
-// =========================================
-export async function getBusinessSettings(): Promise<BusinessSettings> {
-  const { data, error } = await supabase
-    .from('business_settings')
-    .select('*')
-    .eq('id', 1)
-    .single();
-  if (error) throw error;
-  return {
-    businessName: data.business_name,
-    gstin: data.gstin,
-    address: data.address,
-    state: data.state,
-    phone: data.phone,
-    email: data.email,
-    defaultGstPercent: Number(data.default_gst_percent),
-    defaultHsn: data.default_hsn,
-  };
-}
-
-export async function updateBusinessSettings(s: Partial<BusinessSettings>): Promise<void> {
-  const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (s.businessName !== undefined) dbPatch.business_name = s.businessName;
-  if (s.gstin !== undefined) dbPatch.gstin = s.gstin;
-  if (s.address !== undefined) dbPatch.address = s.address;
-  if (s.state !== undefined) dbPatch.state = s.state;
-  if (s.phone !== undefined) dbPatch.phone = s.phone;
-  if (s.email !== undefined) dbPatch.email = s.email;
-  if (s.defaultGstPercent !== undefined) dbPatch.default_gst_percent = s.defaultGstPercent;
-  if (s.defaultHsn !== undefined) dbPatch.default_hsn = s.defaultHsn;
-
-  const { error } = await supabase
-    .from('business_settings')
-    .update(dbPatch)
-    .eq('id', 1);
   if (error) throw error;
 }
 
