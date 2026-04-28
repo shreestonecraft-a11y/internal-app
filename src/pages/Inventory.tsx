@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2 } from "lucide-react";
+import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,6 +31,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [filterLoc, setFilterLoc] = useState("all");
   const [filterCat, setFilterCat] = useState("all");
+  const [sortBy, setSortBy] = useState<"recent" | "name-asc" | "qty-asc" | "qty-desc" | "qty-low-only" | "qty-high-only">("recent");
   const [editItem, setEditItem] = useState<StoneItem | null>(null);
   const [editQty, setEditQty] = useState("");
 
@@ -49,8 +50,18 @@ export default function InventoryPage() {
     }
     if (filterLoc !== "all") res = res.filter(s => s.location === filterLoc);
     if (filterCat !== "all") res = res.filter(s => s.category === filterCat);
-    return res;
-  }, [stones, parsed, filterLoc, filterCat]);
+
+    // Quantity-based filters
+    if (sortBy === "qty-low-only") res = res.filter(s => s.quantity <= 5);
+    if (sortBy === "qty-high-only") res = res.filter(s => s.quantity >= 100);
+
+    // Sorting
+    const sorted = [...res];
+    if (sortBy === "name-asc") sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === "qty-asc") sorted.sort((a, b) => a.quantity - b.quantity);
+    else if (sortBy === "qty-desc") sorted.sort((a, b) => b.quantity - a.quantity);
+    return sorted;
+  }, [stones, parsed, filterLoc, filterCat, sortBy]);
 
   function commitQty(id: string, newQ: number) {
     const s = stones.find(x => x.id === id);
@@ -116,17 +127,28 @@ export default function InventoryPage() {
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             <Select value={filterLoc} onValueChange={setFilterLoc}>
-              <SelectTrigger className="w-40 rounded-xl text-xs h-9"><Filter className="h-3 w-3 mr-1" /><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-40 rounded-xl text-xs h-9 flex-shrink-0"><Filter className="h-3 w-3 mr-1" /><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Locations</SelectItem>
                 {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterCat} onValueChange={setFilterCat}>
-              <SelectTrigger className="w-36 rounded-xl text-xs h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-36 rounded-xl text-xs h-9 flex-shrink-0"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+              <SelectTrigger className="w-44 rounded-xl text-xs h-9 flex-shrink-0"><ArrowUpDown className="h-3 w-3 mr-1" /><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently added</SelectItem>
+                <SelectItem value="name-asc">Name: A → Z</SelectItem>
+                <SelectItem value="qty-asc">Quantity: Low → High</SelectItem>
+                <SelectItem value="qty-desc">Quantity: High → Low</SelectItem>
+                <SelectItem value="qty-high-only">Show 100+ stock only</SelectItem>
+                <SelectItem value="qty-low-only">Show low stock only (≤5)</SelectItem>
               </SelectContent>
             </Select>
           </div>
