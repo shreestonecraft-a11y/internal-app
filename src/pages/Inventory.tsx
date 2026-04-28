@@ -29,9 +29,15 @@ export default function InventoryPage() {
   const updateStone = useUpdateStone();
   const deleteStone = useDeleteStone();
   const [search, setSearch] = useState(searchParams.get("search") || "");
-  const [filterLoc, setFilterLoc] = useState("all");
-  const [filterCat, setFilterCat] = useState("all");
-  const [sortBy, setSortBy] = useState<"recent" | "name-asc" | "qty-asc" | "qty-desc" | "qty-low-only" | "qty-high-only">("recent");
+  const [filterLoc, setFilterLoc] = useState(searchParams.get("location") || "all");
+  const [filterCat, setFilterCat] = useState(searchParams.get("category") || "all");
+  const initialFilter = searchParams.get("filter");
+  const [sortBy, setSortBy] = useState<"recent" | "name-asc" | "qty-asc" | "qty-desc" | "qty-low-only" | "qty-high-only" | "incomplete">(
+    initialFilter === "lowStock" ? "qty-low-only"
+      : initialFilter === "highStock" ? "qty-high-only"
+      : initialFilter === "incomplete" ? "incomplete"
+      : "recent"
+  );
   const [editItem, setEditItem] = useState<StoneItem | null>(null);
   const [editQty, setEditQty] = useState("");
 
@@ -51,9 +57,10 @@ export default function InventoryPage() {
     if (filterLoc !== "all") res = res.filter(s => s.location === filterLoc);
     if (filterCat !== "all") res = res.filter(s => s.category === filterCat);
 
-    // Quantity-based filters
+    // Quantity / completeness filters
     if (sortBy === "qty-low-only") res = res.filter(s => s.quantity <= 5);
     if (sortBy === "qty-high-only") res = res.filter(s => s.quantity >= 100);
+    if (sortBy === "incomplete") res = res.filter(s => !s.size || !s.packing);
 
     // Sorting
     const sorted = [...res];
@@ -149,6 +156,7 @@ export default function InventoryPage() {
                 <SelectItem value="qty-desc">Quantity: High → Low</SelectItem>
                 <SelectItem value="qty-high-only">Show 100+ stock only</SelectItem>
                 <SelectItem value="qty-low-only">Show low stock only (≤5)</SelectItem>
+                <SelectItem value="incomplete">Show incomplete (missing size/packing)</SelectItem>
               </SelectContent>
             </Select>
           </div>
