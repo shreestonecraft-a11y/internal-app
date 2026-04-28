@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AppLayout from "@/components/layout/AppLayout";
-import { InvoiceLineItem, StoneItem } from "@/lib/store";
+import { Invoice, InvoiceLineItem, StoneItem } from "@/lib/store";
 import {
   useInvoices, useCreateInvoice, useDeleteInvoice, useNextInvoiceNumber,
 } from "@/lib/hooks/useInvoices";
@@ -23,6 +23,7 @@ export default function InvoicesPage() {
   const { data: invoices = [], isLoading } = useInvoices();
   const deleteInvoice = useDeleteInvoice();
   const [open, setOpen] = useState(false);
+  const [viewing, setViewing] = useState<Invoice | null>(null);
 
   function handleDelete(id: string) {
     if (!confirm("Delete this dispatch note? Stock already deducted will not be restored.")) return;
@@ -60,7 +61,12 @@ export default function InvoicesPage() {
             {invoices.map(inv => {
               const totalQty = inv.items.reduce((s, it) => s + it.quantity, 0);
               return (
-                <div key={inv.id} className="glass-card rounded-xl p-4 flex items-center gap-4">
+                <button
+                  key={inv.id}
+                  type="button"
+                  onClick={() => setViewing(inv)}
+                  className="glass-card rounded-xl p-4 flex items-center gap-4 w-full text-left hover:shadow-md hover:border-accent/30 transition-all"
+                >
                   <div className="h-12 w-12 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
                     <FileText className="h-5 w-5 text-accent" />
                   </div>
@@ -74,22 +80,28 @@ export default function InvoicesPage() {
                     </p>
                   </div>
                   <div className="flex gap-1">
-                    <button
-                      onClick={() => downloadInvoicePdf(inv)}
-                      className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={e => { e.stopPropagation(); downloadInvoicePdf(inv); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); downloadInvoicePdf(inv); } }}
+                      className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground cursor-pointer"
                       title="Download PDF"
                     >
                       <Download className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(inv.id)}
-                      className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={e => { e.stopPropagation(); handleDelete(inv.id); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDelete(inv.id); } }}
+                      className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive cursor-pointer"
                       title="Delete"
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </span>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -97,7 +109,78 @@ export default function InvoicesPage() {
       </div>
 
       <NewInvoiceDialog open={open} onOpenChange={setOpen} />
+      <ViewInvoiceDialog invoice={viewing} onClose={() => setViewing(null)} onDelete={(id) => { handleDelete(id); setViewing(null); }} />
     </AppLayout>
+  );
+}
+
+function ViewInvoiceDialog({ invoice, onClose, onDelete }: { invoice: Invoice | null; onClose: () => void; onDelete: (id: string) => void; }) {
+  if (!invoice) return null;
+  const totalQty = invoice.items.reduce((s, it) => s + it.quantity, 0);
+
+  return (
+    <Dialog open={!!invoice} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="rounded-2xl max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display flex items-center gap-2">
+            <FileText className="h-5 w-5 text-accent" />
+            {invoice.number}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Date</p>
+              <p className="font-medium text-foreground">{formatDate(invoice.date)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Total Qty</p>
+              <p className="font-display font-bold text-foreground text-lg">{totalQty}</p>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Items ({invoice.items.length})</p>
+            <div className="space-y-2">
+              {invoice.items.map(it => (
+                <div key={it.id} className="border border-border rounded-xl p-3 bg-card flex gap-3 items-center">
+                  {it.image ? (
+                    <img src={it.image} alt={it.name} className="h-12 w-12 rounded-lg object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="h-12 w-12 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
+                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-foreground truncate">{it.name}</p>
+                    <p className="text-xs text-muted-foreground">{it.size}{it.packing ? ` · ${it.packing}` : ""}</p>
+                  </div>
+                  <span className="font-display font-bold text-lg text-foreground flex-shrink-0">{it.quantity}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {invoice.notes && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Notes</p>
+              <p className="text-sm text-foreground whitespace-pre-wrap bg-secondary/40 rounded-lg p-3">{invoice.notes}</p>
+            </div>
+          )}
+
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2 border-t border-border">
+            <Button variant="ghost" className="rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(invoice.id)}>
+              <Trash2 className="h-4 w-4 mr-1" />Delete
+            </Button>
+            <Button variant="outline" className="rounded-xl" onClick={onClose}>Close</Button>
+            <Button className="bg-accent text-accent-foreground rounded-xl" onClick={() => downloadInvoicePdf(invoice)}>
+              <Download className="h-4 w-4 mr-1" />Download PDF
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
