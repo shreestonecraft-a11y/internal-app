@@ -144,10 +144,11 @@ export default function LoginPage() {
           href="https://aonamitech.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <span>Powered by</span>
-          <img src={aonami} alt="Aonami" className="h-3.5 w-auto opacity-70" />
+          <img src={aonami} alt="Aonami" className="h-4 w-auto opacity-80" />
+          <span className="font-semibold">Aonami</span>
         </a>
       </motion.div>
     </motion.div>
