@@ -192,12 +192,24 @@ export default function HomePage() {
 
           {/* Right sidebar: Activity */}
           <div>
-            <h2 className="font-display text-lg font-semibold text-foreground mb-3">Recent Activity</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold text-foreground">Recent Activity</h2>
+              {logs.length > 0 && (
+                <Link to="/history" className="text-xs text-accent font-medium flex items-center gap-1 hover:underline">
+                  See all <ArrowRight className="h-3 w-3" />
+                </Link>
+              )}
+            </div>
             <div className="glass-card rounded-xl p-4">
               {logs.length > 0 ? (
-                <div className="divide-y divide-border">
-                  {logs.slice(0, 8).map(l => <LogEntry key={l.id} log={l} />)}
-                </div>
+                <>
+                  <div className="divide-y divide-border">
+                    {logs.slice(0, 8).map(l => <LogEntry key={l.id} log={l} />)}
+                  </div>
+                  <Link to="/history" className="mt-3 block text-center text-xs text-accent font-medium hover:underline">
+                    See all activity →
+                  </Link>
+                </>
               ) : (
                 <div className="py-6 text-center">
                   <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />

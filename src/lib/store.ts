@@ -256,9 +256,23 @@ export async function bulkAddStones(rows: BulkStoneInput[]): Promise<{ inserted:
   let inserted = 0;
   for (let i = 0; i < valid.length; i += BATCH) {
     const slice = valid.slice(i, i + BATCH);
-    const { error } = await supabase.from('stones').insert(slice);
-    if (error) errors.push(`Batch starting at row ${i + 2}: ${error.message}`);
-    else inserted += slice.length;
+    const { data: insertedRows, error } = await supabase
+      .from('stones')
+      .insert(slice)
+      .select('id, name, quantity');
+    if (error) { errors.push(`Batch starting at row ${i + 2}: ${error.message}`); continue; }
+    inserted += slice.length;
+    if (insertedRows?.length) {
+      await supabase.from('stock_logs').insert(insertedRows.map(r => ({
+        stone_id: r.id,
+        stone_name: r.name,
+        field: 'created',
+        old_value: '',
+        new_value: `Imported via CSV (qty ${r.quantity})`,
+        user_id: created_by,
+        user_email: user.user?.email ?? null,
+      })));
+    }
   }
   return { inserted, errors };
 }
@@ -328,12 +342,56 @@ export async function updateStone(id: string, updates: Partial<StoneItem>): Prom
 }
 
 export async function deleteStone(id: string): Promise<void> {
+  // Fetch name + qty BEFORE delete so we can log the action
+  const { data: prev } = await supabase
+    .from('stones')
+    .select('name, quantity')
+    .eq('id', id)
+    .single();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Write the audit log first — stone_id stays valid until the delete cascades
+  if (prev) {
+    await supabase.from('stock_logs').insert({
+      stone_id: id,
+      stone_name: prev.name,
+      field: 'deleted',
+      old_value: `qty ${prev.quantity}`,
+      new_value: 'Stone deleted',
+      user_id: user?.id ?? null,
+      user_email: user?.email ?? null,
+    });
+  }
+
   const { error } = await supabase.from('stones').delete().eq('id', id);
   if (error) throw error;
 }
 
 export async function bulkDeleteStones(ids: string[]): Promise<void> {
   if (!ids.length) return;
+  const { data: prevRows } = await supabase
+    .from('stones')
+    .select('id, name, quantity')
+    .in('id', ids);
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (prevRows?.length) {
+    const logs = prevRows.map(r => ({
+      stone_id: r.id,
+      stone_name: r.name,
+      field: 'deleted',
+      old_value: `qty ${r.quantity}`,
+      new_value: 'Stone deleted (bulk)',
+      user_id: user?.id ?? null,
+      user_email: user?.email ?? null,
+    }));
+    // Insert logs in batches
+    const LOG_BATCH = 100;
+    for (let i = 0; i < logs.length; i += LOG_BATCH) {
+      await supabase.from('stock_logs').insert(logs.slice(i, i + LOG_BATCH));
+    }
+  }
+
   const BATCH = 100;
   for (let i = 0; i < ids.length; i += BATCH) {
     const slice = ids.slice(i, i + BATCH);
