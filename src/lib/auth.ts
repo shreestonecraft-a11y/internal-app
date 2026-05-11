@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './supabase';
+import { supabase, setSessionOnly } from './supabase';
 import type { Session } from '@supabase/supabase-js';
 
 export interface Profile {
@@ -9,7 +9,9 @@ export interface Profile {
   role: 'owner' | 'staff';
 }
 
-export async function login(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
+export async function login(email: string, password: string, keepSignedIn = true): Promise<{ ok: boolean; error?: string }> {
+  // Configure persistence BEFORE signing in so the session is written to the right storage.
+  setSessionOnly(!keepSignedIn);
   const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
   if (error) return { ok: false, error: error.message };
   return { ok: true };

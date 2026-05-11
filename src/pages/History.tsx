@@ -1,4 +1,4 @@
-import { Clock, Loader2 } from "lucide-react";
+import { Clock, Loader2, User } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useLogs } from "@/lib/hooks/useLogs";
 
@@ -24,7 +24,12 @@ export default function HistoryPage() {
                   <Clock className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm"><span className="font-semibold text-foreground">{l.stoneName}</span> — <span className="text-muted-foreground">{l.field}</span></p>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <p className="text-sm"><span className="font-semibold text-foreground">{l.stoneName}</span> — <span className="text-muted-foreground">{l.field}</span></p>
+                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-semibold">
+                      <User className="h-3 w-3" />{l.userName}
+                    </span>
+                  </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {l.oldValue ? `${l.oldValue} → ${l.newValue}` : l.newValue}
                     <span className="mx-1">·</span>

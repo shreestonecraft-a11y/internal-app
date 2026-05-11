@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
@@ -29,7 +30,7 @@ export default function LoginPage() {
     if (!password) { setError("Password is required"); return; }
 
     setLoading(true);
-    const result = await login(email, password);
+    const result = await login(email, password, keepSignedIn);
 
     if (result.ok) {
       navigate("/", { replace: true });
@@ -99,6 +100,16 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={keepSignedIn}
+              onChange={e => setKeepSignedIn(e.target.checked)}
+              className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+            />
+            <span className="text-sm text-foreground">Keep me signed in</span>
+          </label>
 
           {error && (
             <motion.p

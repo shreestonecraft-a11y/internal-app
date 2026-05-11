@@ -12,16 +12,27 @@ import logo from "@/assets/logo.png";
 const fadeUp = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } };
 
-function StatCard({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: React.ElementType; color: string }) {
-  return (
-    <motion.div variants={fadeUp} className="glass-card rounded-xl p-4 flex items-center gap-4">
+function StatCard({ label, value, icon: Icon, color, to }: { label: string; value: string | number; icon: React.ElementType; color: string; to?: string }) {
+  const inner = (
+    <>
       <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${color}`}>
         <Icon className="h-5 w-5" />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-2xl font-display font-bold text-foreground">{value}</p>
         <p className="text-xs text-muted-foreground font-medium">{label}</p>
       </div>
+    </>
+  );
+  return (
+    <motion.div variants={fadeUp}>
+      {to ? (
+        <Link to={to} className="glass-card rounded-xl p-4 flex items-center gap-4 hover:shadow-md hover:bg-secondary/40 transition-all">
+          {inner}
+        </Link>
+      ) : (
+        <div className="glass-card rounded-xl p-4 flex items-center gap-4">{inner}</div>
+      )}
     </motion.div>
   );
 }
@@ -63,7 +74,9 @@ function LogEntry({ log }: { log: StockLog }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-foreground"><span className="font-semibold">{log.stoneName}</span> — {log.field} updated</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{log.oldValue ? `${log.oldValue} → ${log.newValue}` : log.newValue} · {rel}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {log.oldValue ? `${log.oldValue} → ${log.newValue}` : log.newValue} · by <span className="font-medium text-foreground">{log.userName}</span> · {rel}
+        </p>
       </div>
     </div>
   );
@@ -116,10 +129,10 @@ export default function HomePage() {
       <div className="px-4 md:px-8 lg:px-10 -mt-6 relative z-10 max-w-7xl mx-auto">
         {/* Stats */}
         <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <StatCard label="Total Items" value={active.length} icon={Package} color="bg-accent/10 text-accent" />
-          <StatCard label="Total Qty" value={totalQty.toLocaleString()} icon={TrendingUp} color="bg-success/10 text-success" />
-          <StatCard label="Locations" value={locations.length} icon={MapPin} color="bg-primary/10 text-primary" />
-          <StatCard label="Low Stock" value={lowStock.length} icon={AlertTriangle} color="bg-warning/10 text-warning" />
+          <StatCard label="Total Items" value={active.length} icon={Package} color="bg-accent/10 text-accent" to="/inventory" />
+          <StatCard label="Total Qty" value={totalQty.toLocaleString()} icon={TrendingUp} color="bg-success/10 text-success" to="/insights" />
+          <StatCard label="Locations" value={locations.length} icon={MapPin} color="bg-primary/10 text-primary" to="/settings" />
+          <StatCard label="Low Stock" value={lowStock.length} icon={AlertTriangle} color="bg-warning/10 text-warning" to="/inventory?filter=lowStock" />
         </motion.div>
 
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -131,7 +144,7 @@ export default function HomePage() {
                 <QuickAction to="/add" icon={Plus} label="Add Stone" />
                 <QuickAction to="/inventory" icon={Search} label="Search" />
                 <QuickAction to="/inventory" icon={Package} label="Update Qty" />
-                <QuickAction to="/locations" icon={MapPin} label="Locations" />
+                <QuickAction to="/settings" icon={MapPin} label="Locations" />
               </div>
             </div>
 

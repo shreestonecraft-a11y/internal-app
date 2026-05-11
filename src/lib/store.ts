@@ -29,6 +29,8 @@ export interface StockLog {
   oldValue: string;
   newValue: string;
   timestamp: string;
+  userName: string;
+  userEmail: string;
 }
 
 export interface InvoiceLineItem {
@@ -200,6 +202,7 @@ export async function addStone(input: {
     old_value: '',
     new_value: 'New stone added',
     user_id: created_by,
+    user_email: user.user?.email ?? null,
   });
 
   return mapStone(data as StoneRow);
@@ -303,7 +306,7 @@ export async function updateStone(id: string, updates: Partial<StoneItem>): Prom
   const { data: { user } } = await supabase.auth.getUser();
   const logs: Array<{
     stone_id: string; stone_name: string; field: string;
-    old_value: string; new_value: string; user_id: string | null;
+    old_value: string; new_value: string; user_id: string | null; user_email: string | null;
   }> = [];
   for (const [k, v] of Object.entries(updates)) {
     if (k === 'image' || k === 'updatedAt') continue;
@@ -316,6 +319,7 @@ export async function updateStone(id: string, updates: Partial<StoneItem>): Prom
       old_value: String(oldVal ?? ''),
       new_value: String(v ?? ''),
       user_id: user?.id ?? null,
+      user_email: user?.email ?? null,
     });
   }
   if (logs.length) await supabase.from('stock_logs').insert(logs);
@@ -366,11 +370,17 @@ export async function saveLocations(names: string[]): Promise<void> {
 export async function getLogs(limit = 200): Promise<StockLog[]> {
   const { data, error } = await supabase
     .from('stock_logs')
-    .select('id, stone_id, stone_name, field, old_value, new_value, created_at')
+    .select('id, stone_id, stone_name, field, old_value, new_value, created_at, user_email, profiles(full_name, email)')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []).map(l => ({
+  type Row = {
+    id: string; stone_id: string | null; stone_name: string;
+    field: string; old_value: string; new_value: string; created_at: string;
+    user_email: string | null;
+    profiles: { full_name: string | null; email: string | null } | null;
+  };
+  return ((data as unknown as Row[]) ?? []).map(l => ({
     id: l.id,
     stoneId: l.stone_id,
     stoneName: l.stone_name,
@@ -378,6 +388,8 @@ export async function getLogs(limit = 200): Promise<StockLog[]> {
     oldValue: l.old_value,
     newValue: l.new_value,
     timestamp: l.created_at,
+    userName: l.profiles?.full_name?.trim() || l.profiles?.email || l.user_email || 'Unknown',
+    userEmail: l.profiles?.email || l.user_email || '',
   }));
 }
 
