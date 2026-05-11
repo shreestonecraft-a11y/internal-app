@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle } from "lucide-react";
+import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import AppLayout from "@/components/layout/AppLayout";
 import QtyControls from "@/components/QtyControls";
 import { StoneItem, BulkStoneInput } from "@/lib/store";
-import { useStones, useUpdateStone, useDeleteStone, useBulkAddStones } from "@/lib/hooks/useStones";
+import { useStones, useUpdateStone, useDeleteStone, useBulkAddStones, useBulkDeleteStones } from "@/lib/hooks/useStones";
 import { useLocations } from "@/lib/hooks/useLocations";
 import { parseSearchQuery } from "@/lib/searchQuery";
 import { parseCsv, buildTemplateCsv } from "@/lib/csv";
@@ -30,11 +30,44 @@ export default function InventoryPage() {
   const updateStone = useUpdateStone();
   const deleteStone = useDeleteStone();
   const bulkAdd = useBulkAddStones();
+  const bulkDelete = useBulkDeleteStones();
   const csvFileRef = useRef<HTMLInputElement>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importRows, setImportRows] = useState<BulkStoneInput[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importFileName, setImportFileName] = useState("");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function selectAllVisible() {
+    setSelected(new Set(filtered.map(s => s.id)));
+  }
+  function clearSelection() {
+    setSelected(new Set());
+  }
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+  function handleBulkDelete() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} item${ids.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+    bulkDelete.mutate(ids, {
+      onSuccess: () => {
+        toast.success(`${ids.length} item${ids.length === 1 ? "" : "s"} deleted`);
+        exitSelectMode();
+      },
+      onError: (e) => toast.error(`Delete failed: ${(e as Error).message}`),
+    });
+  }
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [filterLoc, setFilterLoc] = useState(searchParams.get("location") || "all");
   const initialFilter = searchParams.get("filter");
@@ -189,14 +222,46 @@ export default function InventoryPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="font-display text-xl md:text-2xl font-bold text-foreground">Inventory</h1>
           <div className="flex items-center gap-2">
-            <Button onClick={() => setImportOpen(true)} variant="outline" className="rounded-xl" size="sm">
-              <Upload className="h-4 w-4 mr-1" />Import
-            </Button>
-            <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl" size="sm">
-              <Link to="/add"><Plus className="h-4 w-4 mr-1" />Add</Link>
-            </Button>
+            {!selectMode && (
+              <>
+                <Button onClick={() => setSelectMode(true)} variant="outline" className="rounded-xl" size="sm">
+                  <CheckSquare className="h-4 w-4 mr-1" />Select
+                </Button>
+                <Button onClick={() => setImportOpen(true)} variant="outline" className="rounded-xl" size="sm">
+                  <Upload className="h-4 w-4 mr-1" />Import
+                </Button>
+                <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl" size="sm">
+                  <Link to="/add"><Plus className="h-4 w-4 mr-1" />Add</Link>
+                </Button>
+              </>
+            )}
           </div>
         </div>
+
+        {selectMode && (
+          <div className="sticky top-0 z-20 -mx-4 md:-mx-8 lg:-mx-10 px-4 md:px-8 lg:px-10 py-2.5 mb-4 bg-card border-b border-border flex items-center gap-2 shadow-sm">
+            <button onClick={exitSelectMode} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground">
+              <X className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-semibold text-foreground flex-1">
+              {selected.size > 0 ? `${selected.size} selected` : "Select items"}
+            </span>
+            {selected.size < filtered.length ? (
+              <Button onClick={selectAllVisible} size="sm" variant="ghost" className="rounded-lg text-xs h-8">Select all</Button>
+            ) : selected.size > 0 ? (
+              <Button onClick={clearSelection} size="sm" variant="ghost" className="rounded-lg text-xs h-8">Clear</Button>
+            ) : null}
+            <Button
+              onClick={handleBulkDelete}
+              disabled={selected.size === 0 || bulkDelete.isPending}
+              size="sm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-lg h-8"
+            >
+              {bulkDelete.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+              Delete
+            </Button>
+          </div>
+        )}
 
         {/* Search & Filter */}
         <div className="space-y-3 mb-6">
@@ -262,6 +327,17 @@ export default function InventoryPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/50">
+                    {selectMode && (
+                      <th className="px-3 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={filtered.length > 0 && selected.size === filtered.length}
+                          ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < filtered.length; }}
+                          onChange={() => selected.size === filtered.length ? clearSelection() : selectAllVisible()}
+                          className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+                        />
+                      </th>
+                    )}
                     <th className="text-left px-4 py-3 font-semibold text-muted-foreground w-16"></th>
                     <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Stone</th>
                     <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Size</th>
@@ -273,22 +349,43 @@ export default function InventoryPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filtered.map(s => (
-                    <tr key={s.id} className="hover:bg-secondary/30 transition-colors group">
+                    <tr
+                      key={s.id}
+                      className={`transition-colors group ${selectMode ? "cursor-pointer" : ""} ${selected.has(s.id) ? "bg-accent/5" : "hover:bg-secondary/30"}`}
+                      onClick={selectMode ? () => toggleSelect(s.id) : undefined}
+                    >
+                      {selectMode && (
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(s.id)}
+                            onChange={() => toggleSelect(s.id)}
+                            onClick={e => e.stopPropagation()}
+                            className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-2"><Thumb src={s.image} name={s.name} /></td>
                       <td className="px-4 py-3 font-semibold text-foreground">{s.name}</td>
                       <td className="px-4 py-3 text-muted-foreground">{s.size}</td>
                       <td className="px-4 py-3 text-muted-foreground">{s.packing}</td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end">
-                          <QtyControls quantity={s.quantity} onCommit={(q) => commitQty(s.id, q)} />
-                        </div>
+                        {selectMode ? (
+                          <span className="text-sm font-display font-bold text-foreground">{s.quantity}</span>
+                        ) : (
+                          <div className="flex justify-end">
+                            <QtyControls quantity={s.quantity} onCommit={(q) => commitQty(s.id, q)} />
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3"><span className="text-xs px-2 py-1 rounded-full bg-secondary text-muted-foreground">{s.location}</span></td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => handleDelete(s.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
+                        {!selectMode && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => handleDelete(s.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -299,7 +396,22 @@ export default function InventoryPage() {
             {/* Mobile Cards */}
             <div className="md:hidden space-y-2">
               {filtered.map(s => (
-                <div key={s.id} className="glass-card rounded-xl p-3 flex gap-3">
+                <div
+                  key={s.id}
+                  className={`glass-card rounded-xl p-3 flex gap-3 transition-colors ${selectMode ? "cursor-pointer" : ""} ${selected.has(s.id) ? "ring-2 ring-accent bg-accent/5" : ""}`}
+                  onClick={selectMode ? () => toggleSelect(s.id) : undefined}
+                >
+                  {selectMode && (
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(s.id)}
+                        onChange={() => toggleSelect(s.id)}
+                        onClick={e => e.stopPropagation()}
+                        className="h-5 w-5 rounded border-border accent-accent cursor-pointer"
+                      />
+                    </div>
+                  )}
                   <Thumb src={s.image} name={s.name} size="h-16 w-16" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
@@ -307,21 +419,27 @@ export default function InventoryPage() {
                         <p className="font-semibold text-foreground text-sm truncate">{s.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{s.size} · {s.packing}</p>
                       </div>
-                      <div className="flex items-center gap-1 -mr-1">
-                        <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 text-muted-foreground">
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => { if (window.confirm(`Delete ${s.name}? This can't be undone.`)) handleDelete(s.id); }}
-                          className="p-1.5 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                      {!selectMode && (
+                        <div className="flex items-center gap-1 -mr-1">
+                          <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 text-muted-foreground">
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => { if (window.confirm(`Delete ${s.name}? This can't be undone.`)) handleDelete(s.id); }}
+                            className="p-1.5 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">{s.location}</span>
-                      <QtyControls quantity={s.quantity} onCommit={(q) => commitQty(s.id, q)} size="md" />
+                      {selectMode ? (
+                        <span className="text-sm font-display font-bold text-foreground">Qty: {s.quantity}</span>
+                      ) : (
+                        <QtyControls quantity={s.quantity} onCommit={(q) => commitQty(s.id, q)} size="md" />
+                      )}
                     </div>
                   </div>
                 </div>

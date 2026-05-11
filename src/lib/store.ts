@@ -328,6 +328,16 @@ export async function deleteStone(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function bulkDeleteStones(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const BATCH = 100;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const { error } = await supabase.from('stones').delete().in('id', slice);
+    if (error) throw error;
+  }
+}
+
 // =========================================
 // Locations
 // =========================================
