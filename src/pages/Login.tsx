@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { login } from "@/lib/auth";
 import logo from "@/assets/logo.png";
+import aonami from "@/assets/aonami.svg";
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
 const stagger = { visible: { transition: { staggerChildren: 0.1 } } };
@@ -138,6 +139,17 @@ export default function LoginPage() {
       <motion.p variants={fadeUp} className="text-xs text-muted-foreground text-center mt-6">
         Internal system — authorized users only
       </motion.p>
+      <motion.div variants={fadeUp} className="flex justify-center mt-4">
+        <a
+          href="https://aonamitech.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <span>Powered by</span>
+          <img src={aonami} alt="Aonami" className="h-3.5 w-auto opacity-70" />
+        </a>
+      </motion.div>
     </motion.div>
   );
 
