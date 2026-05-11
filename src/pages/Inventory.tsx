@@ -224,9 +224,6 @@ export default function InventoryPage() {
           <div className="flex items-center gap-2">
             {!selectMode && (
               <>
-                <Button onClick={() => setSelectMode(true)} variant="outline" className="rounded-xl" size="sm">
-                  <CheckSquare className="h-4 w-4 mr-1" />Select
-                </Button>
                 <Button onClick={() => setImportOpen(true)} variant="outline" className="rounded-xl" size="sm">
                   <Upload className="h-4 w-4 mr-1" />Import
                 </Button>
@@ -304,6 +301,14 @@ export default function InventoryPage() {
 
         <div className="flex items-center gap-2 mb-3">
           <p className="text-xs text-muted-foreground">{filtered.length} items</p>
+          {!selectMode && filtered.length > 0 && (
+            <button
+              onClick={() => setSelectMode(true)}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <CheckSquare className="h-3 w-3" />Select
+            </button>
+          )}
           {parsed.min !== null && (
             <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-semibold">
               ≥ {parsed.min} sft
