@@ -8,6 +8,9 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+const COMPANY_ADDRESS = "2-4-208/5, Beside Maruthi Nexa Showroom, Snehapuri Colony, Nagole, Hyderabad - 500102";
+const COMPANY_GST = "36ADHPD1781B1Z0";
+
 export async function downloadInvoicePdf(inv: Invoice) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
@@ -15,9 +18,10 @@ export async function downloadInvoicePdf(inv: Invoice) {
   const DARK: [number, number, number] = [24, 24, 27];
   const MUTED: [number, number, number] = [113, 113, 122];
 
-  // Header bar
+  // Header bar (taller to fit address + GST)
+  const HEADER_H = 140;
   doc.setFillColor(...DARK);
-  doc.rect(0, 0, W, 90, "F");
+  doc.rect(0, 0, W, HEADER_H, "F");
 
   try { doc.addImage(logo, "PNG", 40, 22, 46, 46); } catch { /* ignore */ }
 
@@ -30,6 +34,19 @@ export async function downloadInvoicePdf(inv: Invoice) {
   doc.setTextColor(180, 180, 180);
   doc.text("Stone Inventory · Dispatch Note", 100, 60);
 
+  // Address (wrap to a width that doesn't overlap the right-aligned title block)
+  const addressLines = doc.splitTextToSize(COMPANY_ADDRESS, W - 100 - 180);
+  doc.setFontSize(8.5);
+  doc.setTextColor(210, 210, 210);
+  doc.text(addressLines, 40, 92);
+
+  // GST line
+  const gstY = 92 + addressLines.length * 11 + 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text(`GSTIN: ${COMPANY_GST}`, 40, gstY);
+
   doc.setTextColor(...RED);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
@@ -39,29 +56,30 @@ export async function downloadInvoicePdf(inv: Invoice) {
   doc.text(inv.number, W - 40, 68, { align: "right" });
 
   doc.setFillColor(...RED);
-  doc.rect(0, 90, W, 3, "F");
+  doc.rect(0, HEADER_H, W, 3, "F");
 
-  // Date
+  // Date / totals row — push down to below the new header
+  const META_Y = HEADER_H + 25;
   doc.setTextColor(...MUTED);
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
-  doc.text("DATE", 40, 125);
+  doc.text("DATE", 40, META_Y);
   doc.setTextColor(...DARK);
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.text(formatDate(inv.date), 40, 140);
+  doc.text(formatDate(inv.date), 40, META_Y + 15);
 
   const totalQty = inv.items.reduce((s, it) => s + it.quantity, 0);
   doc.setTextColor(...MUTED);
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
-  doc.text("TOTAL ITEMS", W - 200, 125);
-  doc.text("TOTAL QUANTITY", W - 100, 125);
+  doc.text("TOTAL ITEMS", W - 200, META_Y);
+  doc.text("TOTAL QUANTITY", W - 100, META_Y);
   doc.setTextColor(...DARK);
   doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.text(String(inv.items.length), W - 200, 142);
-  doc.text(String(totalQty), W - 100, 142);
+  doc.text(String(inv.items.length), W - 200, META_Y + 17);
+  doc.text(String(totalQty), W - 100, META_Y + 17);
 
   // Items table — only # | Item | Qty
   const body = inv.items.map((it, i) => [
@@ -71,7 +89,7 @@ export async function downloadInvoicePdf(inv: Invoice) {
   ]);
 
   autoTable(doc, {
-    startY: 170,
+    startY: META_Y + 45,
     head: [["#", "Item & Description", "Qty"]],
     body,
     theme: "plain",
