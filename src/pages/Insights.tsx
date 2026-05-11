@@ -131,16 +131,6 @@ export default function InsightsPage() {
 
   const maxLocQty = Math.max(...byLocation.map(([, v]) => v.qty), 1);
 
-  // ---- Items by category ----
-  const byCategory = useMemo(() => {
-    const map: Record<string, number> = {};
-    active.forEach(s => {
-      const cat = s.category?.trim() || "Uncategorized";
-      map[cat] = (map[cat] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [active]);
-
   if (stonesLoading) {
     return (
       <AppLayout>
@@ -286,49 +276,26 @@ export default function InsightsPage() {
         </div>
 
         {/* Stock by location — clickable */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="glass-card rounded-xl p-5">
-            <h2 className="font-display text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-accent" />Stock by Location
-            </h2>
-            <div className="space-y-3">
-              {byLocation.map(([loc, { count, qty }]) => (
-                <button
-                  key={loc}
-                  onClick={() => navigate(`/inventory?location=${encodeURIComponent(loc)}`)}
-                  className="block w-full text-left hover:bg-secondary/40 rounded-lg p-2 -mx-2 transition-colors"
-                >
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-foreground font-medium">{loc}</span>
-                    <span className="text-muted-foreground text-xs">{count} items · {qty} qty</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(qty / maxLocQty) * 100}%` }} />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Items by category */}
-          <div className="glass-card rounded-xl p-5">
-            <h2 className="font-display text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Tag className="h-4 w-4 text-accent" />Items by Category
-            </h2>
-            <div className="space-y-1">
-              {byCategory.map(([cat, count]) => (
-                <button
-                  key={cat}
-                  onClick={() => cat !== "Uncategorized" && navigate(`/inventory?category=${encodeURIComponent(cat)}`)}
-                  disabled={cat === "Uncategorized"}
-                  className="w-full flex items-center justify-between py-2 border-b border-border last:border-0 text-left hover:bg-secondary/40 rounded-lg px-2 -mx-2 disabled:opacity-60 disabled:cursor-default"
-                >
-                  <span className="text-sm text-foreground">{cat}</span>
-                  <span className="text-sm font-display font-bold text-foreground">{count}</span>
-                </button>
-              ))}
-              {byCategory.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No data yet</p>}
-            </div>
+        <div className="glass-card rounded-xl p-5">
+          <h2 className="font-display text-base font-semibold text-foreground mb-4 flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-accent" />Stock by Location
+          </h2>
+          <div className="space-y-3">
+            {byLocation.map(([loc, { count, qty }]) => (
+              <button
+                key={loc}
+                onClick={() => navigate(`/inventory?location=${encodeURIComponent(loc)}`)}
+                className="block w-full text-left hover:bg-secondary/40 rounded-lg p-2 -mx-2 transition-colors"
+              >
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-foreground font-medium">{loc}</span>
+                  <span className="text-muted-foreground text-xs">{count} items · {qty} qty</span>
+                </div>
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(qty / maxLocQty) * 100}%` }} />
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       </div>

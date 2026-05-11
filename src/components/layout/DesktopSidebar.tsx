@@ -1,4 +1,4 @@
-import { Home, Package, PlusCircle, MapPin, BarChart3, History, Settings, LogOut, FileText } from "lucide-react";
+import { Home, Package, PlusCircle, BarChart3, History, Settings, LogOut, FileText } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { logout } from "@/lib/auth";
 import logo from "@/assets/logo.png";
@@ -8,7 +8,6 @@ const navItems = [
   { to: "/inventory", icon: Package, label: "Inventory" },
   { to: "/add", icon: PlusCircle, label: "Add Stone" },
   { to: "/invoices", icon: FileText, label: "Invoices" },
-  { to: "/locations", icon: MapPin, label: "Locations" },
   { to: "/insights", icon: BarChart3, label: "Insights" },
   { to: "/history", icon: History, label: "History" },
   { to: "/settings", icon: Settings, label: "Settings" },

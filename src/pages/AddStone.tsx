@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import AppLayout from "@/components/layout/AppLayout";
-import { CATEGORIES, uploadStoneImage } from "@/lib/store";
+import { uploadStoneImage } from "@/lib/store";
 import { useAddStone, useStones } from "@/lib/hooks/useStones";
 import { useLocations } from "@/lib/hooks/useLocations";
 import { toast } from "sonner";
@@ -43,7 +43,7 @@ export default function AddStonePage() {
   const { data: stones = [] } = useStones();
   const addStone = useAddStone();
   const [form, setForm] = useState({
-    name: "", size: "", packing: "", quantity: "", location: "", category: "", variant: "", notes: "", sku: "", image: "",
+    name: "", size: "", packing: "", quantity: "", location: "", notes: "", image: "",
   });
   const [uploading, setUploading] = useState(false);
 
@@ -79,16 +79,16 @@ export default function AddStonePage() {
       packing: form.packing.trim(),
       quantity: parseInt(form.quantity) || 0,
       location: form.location,
-      category: form.category || "Other",
-      variant: form.variant.trim(),
+      category: "",
+      variant: "",
       notes: form.notes.trim(),
-      sku: form.sku.trim(),
+      sku: "",
       image: form.image || undefined,
     }, {
       onSuccess: () => {
         toast.success(`${form.name} added`);
         if (addAnother) {
-          setForm({ name: "", size: "", packing: "", quantity: "", location: form.location, category: form.category, variant: "", notes: "", sku: "", image: "" });
+          setForm({ name: "", size: "", packing: "", quantity: "", location: form.location, notes: "", image: "" });
         } else {
           nav("/inventory");
         }
@@ -155,15 +155,9 @@ export default function AddStonePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Quantity</Label>
-              <Input type="number" inputMode="numeric" value={form.quantity} onChange={e => set("quantity", e.target.value)} placeholder="0" className="rounded-xl" />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">SKU</Label>
-              <Input value={form.sku} onChange={e => set("sku", e.target.value)} placeholder="Optional" className="rounded-xl" />
-            </div>
+          <div>
+            <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Quantity</Label>
+            <Input type="number" inputMode="numeric" value={form.quantity} onChange={e => set("quantity", e.target.value)} placeholder="0" className="rounded-xl" />
           </div>
 
           <div>
@@ -174,22 +168,6 @@ export default function AddStonePage() {
                 {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Category</Label>
-              <Select value={form.category} onValueChange={v => set("category", v)}>
-                <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Variant / Finish</Label>
-              <Input value={form.variant} onChange={e => set("variant", e.target.value)} placeholder="e.g. Polished" className="rounded-xl" />
-            </div>
           </div>
 
           <div>

@@ -205,6 +205,61 @@ export async function addStone(input: {
   return mapStone(data as StoneRow);
 }
 
+export interface BulkStoneInput {
+  name: string;
+  size: string;
+  packing: string;
+  quantity: number;
+  location: string;
+  notes: string;
+}
+
+export async function bulkAddStones(rows: BulkStoneInput[]): Promise<{ inserted: number; errors: string[] }> {
+  const { data: locs } = await supabase.from('locations').select('id, name');
+  const locMap = new Map((locs ?? []).map(l => [l.name, l.id]));
+  const { data: user } = await supabase.auth.getUser();
+  const created_by = user.user?.id ?? null;
+
+  const errors: string[] = [];
+  const valid: Array<Record<string, unknown>> = [];
+  rows.forEach((r, i) => {
+    const rowNum = i + 2; // +2 = header row + 0-based to 1-based
+    if (!r.name?.trim()) { errors.push(`Row ${rowNum}: missing Stone Name`); return; }
+    const locName = r.location?.trim();
+    const location_id = locName ? locMap.get(locName) : null;
+    if (locName && !location_id) {
+      errors.push(`Row ${rowNum}: location "${locName}" doesn't exist — add it in Settings first`);
+      return;
+    }
+    valid.push({
+      name: r.name.trim(),
+      size: r.size?.trim() ?? '',
+      packing: r.packing?.trim() ?? '',
+      quantity: Number.isFinite(r.quantity) ? Math.max(0, Math.floor(r.quantity)) : 0,
+      location_id: location_id ?? null,
+      category: '',
+      variant: '',
+      sku: '',
+      notes: r.notes?.trim() ?? '',
+      image_url: null,
+      status: 'active',
+      created_by,
+    });
+  });
+
+  if (!valid.length) return { inserted: 0, errors };
+
+  const BATCH = 50;
+  let inserted = 0;
+  for (let i = 0; i < valid.length; i += BATCH) {
+    const slice = valid.slice(i, i + BATCH);
+    const { error } = await supabase.from('stones').insert(slice);
+    if (error) errors.push(`Batch starting at row ${i + 2}: ${error.message}`);
+    else inserted += slice.length;
+  }
+  return { inserted, errors };
+}
+
 export async function updateStone(id: string, updates: Partial<StoneItem>): Promise<void> {
   // Pull current row for audit diff
   const { data: prev } = await supabase
@@ -282,7 +337,8 @@ export async function getLocations(): Promise<string[]> {
     .select('name, sort_order')
     .order('sort_order');
   if (error) throw error;
-  return (data ?? []).map(l => l.name);
+  const names = (data ?? []).map(l => l.name);
+  return names.length ? names : ["Showroom", "Godown"];
 }
 
 export async function saveLocations(names: string[]): Promise<void> {

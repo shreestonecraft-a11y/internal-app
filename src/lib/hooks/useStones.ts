@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  addStone, deleteStone, getStones, updateStone,
+  addStone, bulkAddStones, deleteStone, getStones, updateStone,
   type StoneItem,
 } from '@/lib/store';
 
@@ -39,6 +39,17 @@ export function useDeleteStone() {
     mutationFn: deleteStone,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: STONES_KEY });
+    },
+  });
+}
+
+export function useBulkAddStones() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: bulkAddStones,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: STONES_KEY });
+      qc.invalidateQueries({ queryKey: ['logs'] });
     },
   });
 }

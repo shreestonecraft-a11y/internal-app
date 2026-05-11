@@ -1,10 +1,14 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings as SettingsIcon, LogOut, User, Users, Shield, Trash2, ExternalLink, Loader2 } from "lucide-react";
+import { Settings as SettingsIcon, LogOut, User, Users, Shield, Trash2, ExternalLink, Loader2, MapPin, Plus, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import AppLayout from "@/components/layout/AppLayout";
 import { useAuth, logout, type Profile } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { useLocations, useSaveLocations } from "@/lib/hooks/useLocations";
+import { useStones } from "@/lib/hooks/useStones";
 import { toast } from "sonner";
 
 const SUPABASE_USERS_URL = `${import.meta.env.VITE_SUPABASE_URL?.replace('.supabase.co', '')}.supabase.co`;
@@ -29,6 +33,49 @@ export default function SettingsPage() {
     queryFn: fetchProfiles,
     enabled: isOwner,
   });
+
+  const { data: locations = [], isLoading: locsLoading } = useLocations();
+  const { data: stones = [] } = useStones();
+  const saveLocations = useSaveLocations();
+  const [addingLoc, setAddingLoc] = useState(false);
+  const [newLocName, setNewLocName] = useState("");
+  const [editingLocIdx, setEditingLocIdx] = useState<number | null>(null);
+  const [editLocName, setEditLocName] = useState("");
+
+  function handleAddLocation() {
+    const name = newLocName.trim();
+    if (!name) { toast.error("Name required"); return; }
+    if (locations.includes(name)) { toast.error("Already exists"); return; }
+    saveLocations.mutate([...locations, name], {
+      onSuccess: () => { setAddingLoc(false); setNewLocName(""); toast.success(`Added "${name}"`); },
+      onError: (e) => toast.error(`Add failed: ${(e as Error).message}`),
+    });
+  }
+
+  function handleRenameLocation(idx: number) {
+    const name = editLocName.trim();
+    if (!name) { toast.error("Name required"); return; }
+    if (name === locations[idx]) { setEditingLocIdx(null); return; }
+    if (locations.includes(name)) { toast.error("Already exists"); return; }
+    const next = [...locations];
+    next[idx] = name;
+    saveLocations.mutate(next, {
+      onSuccess: () => { setEditingLocIdx(null); toast.success("Renamed"); },
+      onError: (e) => toast.error(`Rename failed: ${(e as Error).message}`),
+    });
+  }
+
+  function handleDeleteLocation(name: string) {
+    const itemsHere = stones.filter(s => s.status === "active" && s.location === name).length;
+    const msg = itemsHere > 0
+      ? `"${name}" has ${itemsHere} item${itemsHere === 1 ? "" : "s"}. Delete anyway? Items will lose their location.`
+      : `Delete "${name}"?`;
+    if (!confirm(msg)) return;
+    saveLocations.mutate(locations.filter(l => l !== name), {
+      onSuccess: () => toast.success("Location deleted"),
+      onError: (e) => toast.error(`Delete failed: ${(e as Error).message}`),
+    });
+  }
 
   const setRole = useMutation({
     mutationFn: async ({ id, role }: { id: string; role: 'owner' | 'staff' }) => {
@@ -82,6 +129,91 @@ export default function SettingsPage() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
+        </section>
+
+        {/* Locations */}
+        <section className="glass-card rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display text-base font-semibold text-foreground flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-accent" />Locations
+            </h2>
+            {!addingLoc && (
+              <Button onClick={() => setAddingLoc(true)} size="sm" variant="outline" className="rounded-lg h-8 text-xs">
+                <Plus className="h-3.5 w-3.5 mr-1" />Add
+              </Button>
+            )}
+          </div>
+
+          {addingLoc && (
+            <div className="flex items-center gap-2 mb-3">
+              <Input
+                autoFocus
+                value={newLocName}
+                onChange={e => setNewLocName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleAddLocation(); if (e.key === "Escape") { setAddingLoc(false); setNewLocName(""); } }}
+                placeholder="New location name"
+                className="rounded-lg h-9"
+              />
+              <Button size="sm" onClick={handleAddLocation} disabled={saveLocations.isPending} className="bg-accent text-accent-foreground rounded-lg">
+                {saveLocations.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAddingLoc(false); setNewLocName(""); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {locsLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <div className="space-y-2">
+              {locations.map((loc, idx) => {
+                const isEditingThis = editingLocIdx === idx;
+                return (
+                  <div key={loc} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-secondary/40">
+                    {isEditingThis ? (
+                      <>
+                        <Input
+                          autoFocus
+                          value={editLocName}
+                          onChange={e => setEditLocName(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") handleRenameLocation(idx); if (e.key === "Escape") setEditingLocIdx(null); }}
+                          className="rounded-lg h-8 text-sm flex-1"
+                        />
+                        <button onClick={() => handleRenameLocation(idx)} className="p-1.5 rounded-lg hover:bg-secondary text-success">
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => setEditingLocIdx(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm font-medium text-foreground flex-1 truncate">{loc}</span>
+                        <button
+                          onClick={() => { setEditingLocIdx(idx); setEditLocName(loc); }}
+                          className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"
+                          title="Rename"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLocation(loc)}
+                          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              {locations.length === 0 && !addingLoc && (
+                <p className="text-sm text-muted-foreground text-center py-3">No locations yet.</p>
+              )}
+            </div>
           )}
         </section>
 

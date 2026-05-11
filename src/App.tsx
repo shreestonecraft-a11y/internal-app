@@ -9,7 +9,6 @@ import { useAuth } from "@/lib/auth";
 import Index from "./pages/Index.tsx";
 import Inventory from "./pages/Inventory.tsx";
 import AddStone from "./pages/AddStone.tsx";
-import Locations from "./pages/Locations.tsx";
 import Insights from "./pages/Insights.tsx";
 import History from "./pages/History.tsx";
 import Invoices from "./pages/Invoices.tsx";
@@ -47,7 +46,6 @@ const App = () => (
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
           <Route path="/add" element={<ProtectedRoute><AddStone /></ProtectedRoute>} />
-          <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
           <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />

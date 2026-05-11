@@ -1,16 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown } from "lucide-react";
+import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AppLayout from "@/components/layout/AppLayout";
 import QtyControls from "@/components/QtyControls";
-import { StoneItem, CATEGORIES } from "@/lib/store";
-import { useStones, useUpdateStone, useDeleteStone } from "@/lib/hooks/useStones";
+import { StoneItem, BulkStoneInput } from "@/lib/store";
+import { useStones, useUpdateStone, useDeleteStone, useBulkAddStones } from "@/lib/hooks/useStones";
 import { useLocations } from "@/lib/hooks/useLocations";
 import { parseSearchQuery } from "@/lib/searchQuery";
+import { parseCsv, buildTemplateCsv } from "@/lib/csv";
 import { toast } from "sonner";
 
 function Thumb({ src, name, size = "h-12 w-12" }: { src?: string; name: string; size?: string }) {
@@ -28,9 +29,14 @@ export default function InventoryPage() {
   const { data: locations = [] } = useLocations();
   const updateStone = useUpdateStone();
   const deleteStone = useDeleteStone();
+  const bulkAdd = useBulkAddStones();
+  const csvFileRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importRows, setImportRows] = useState<BulkStoneInput[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importFileName, setImportFileName] = useState("");
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [filterLoc, setFilterLoc] = useState(searchParams.get("location") || "all");
-  const [filterCat, setFilterCat] = useState(searchParams.get("category") || "all");
   const initialFilter = searchParams.get("filter");
   const [sortBy, setSortBy] = useState<"recent" | "name-asc" | "qty-asc" | "qty-desc" | "qty-low-only" | "qty-high-only" | "incomplete">(
     initialFilter === "lowStock" ? "qty-low-only"
@@ -50,12 +56,10 @@ export default function InventoryPage() {
       const q = parsed.text.toLowerCase();
       res = res.filter(s =>
         s.name.toLowerCase().includes(q) || s.size.toLowerCase().includes(q) ||
-        s.location.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) ||
-        s.sku.toLowerCase().includes(q)
+        s.location.toLowerCase().includes(q)
       );
     }
     if (filterLoc !== "all") res = res.filter(s => s.location === filterLoc);
-    if (filterCat !== "all") res = res.filter(s => s.category === filterCat);
 
     // Quantity / completeness filters
     if (sortBy === "qty-low-only") res = res.filter(s => s.quantity <= 5);
@@ -68,7 +72,7 @@ export default function InventoryPage() {
     else if (sortBy === "qty-asc") sorted.sort((a, b) => a.quantity - b.quantity);
     else if (sortBy === "qty-desc") sorted.sort((a, b) => b.quantity - a.quantity);
     return sorted;
-  }, [stones, parsed, filterLoc, filterCat, sortBy]);
+  }, [stones, parsed, filterLoc, sortBy]);
 
   function commitQty(id: string, newQ: number) {
     const s = stones.find(x => x.id === id);
@@ -96,6 +100,79 @@ export default function InventoryPage() {
     });
   }
 
+  function downloadTemplate() {
+    const csv = buildTemplateCsv();
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "stone-inventory-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    try {
+      const text = await file.text();
+      const parsed = parseCsv(text);
+      const errs: string[] = [];
+      const rows: BulkStoneInput[] = parsed.map((r, i) => {
+        const rowNum = i + 2;
+        const qtyRaw = r["Quantity"] ?? "";
+        const qty = qtyRaw === "" ? 0 : parseInt(qtyRaw, 10);
+        if (qtyRaw !== "" && isNaN(qty)) errs.push(`Row ${rowNum}: Quantity "${qtyRaw}" is not a number`);
+        return {
+          name: r["Stone Name"] ?? "",
+          size: r["Size"] ?? "",
+          packing: r["Packing"] ?? "",
+          quantity: isNaN(qty) ? 0 : qty,
+          location: r["Location"] ?? "",
+          notes: r["Notes"] ?? "",
+        };
+      });
+      if (parsed.length === 0) errs.push("CSV is empty or has no data rows");
+      setImportRows(rows);
+      setImportErrors(errs);
+    } catch (err) {
+      toast.error(`Failed to read CSV: ${(err as Error).message}`);
+      setImportRows([]);
+      setImportErrors([]);
+    } finally {
+      if (csvFileRef.current) csvFileRef.current.value = "";
+    }
+  }
+
+  function handleConfirmImport() {
+    if (importRows.length === 0) return;
+    bulkAdd.mutate(importRows, {
+      onSuccess: ({ inserted, errors }) => {
+        if (inserted > 0) toast.success(`Imported ${inserted} item${inserted === 1 ? "" : "s"}`);
+        if (errors.length) {
+          setImportErrors(errors);
+          toast.error(`${errors.length} row${errors.length === 1 ? "" : "s"} failed — see details`);
+        } else {
+          setImportOpen(false);
+          setImportRows([]);
+          setImportErrors([]);
+          setImportFileName("");
+        }
+      },
+      onError: (e) => toast.error(`Import failed: ${(e as Error).message}`),
+    });
+  }
+
+  function resetImport() {
+    setImportRows([]);
+    setImportErrors([]);
+    setImportFileName("");
+    if (csvFileRef.current) csvFileRef.current.value = "";
+  }
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -111,9 +188,14 @@ export default function InventoryPage() {
       <div className="px-4 md:px-8 lg:px-10 py-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="font-display text-xl md:text-2xl font-bold text-foreground">Inventory</h1>
-          <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl" size="sm">
-            <Link to="/add"><Plus className="h-4 w-4 mr-1" />Add</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setImportOpen(true)} variant="outline" className="rounded-xl" size="sm">
+              <Upload className="h-4 w-4 mr-1" />Import
+            </Button>
+            <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl" size="sm">
+              <Link to="/add"><Plus className="h-4 w-4 mr-1" />Add</Link>
+            </Button>
+          </div>
         </div>
 
         {/* Search & Filter */}
@@ -138,13 +220,6 @@ export default function InventoryPage() {
               <SelectContent>
                 <SelectItem value="all">All Locations</SelectItem>
                 {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filterCat} onValueChange={setFilterCat}>
-              <SelectTrigger className="w-36 rounded-xl text-xs h-9 flex-shrink-0"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
@@ -193,7 +268,6 @@ export default function InventoryPage() {
                     <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Packing</th>
                     <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Qty</th>
                     <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Location</th>
-                    <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Category</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -210,7 +284,6 @@ export default function InventoryPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3"><span className="text-xs px-2 py-1 rounded-full bg-secondary text-muted-foreground">{s.location}</span></td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">{s.category}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
@@ -232,7 +305,7 @@ export default function InventoryPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-foreground text-sm truncate">{s.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{s.size} · {s.packing} · {s.category}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{s.size} · {s.packing}</p>
                       </div>
                       <div className="flex items-center gap-1 -mr-1">
                         <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 text-muted-foreground">
@@ -291,6 +364,97 @@ export default function InventoryPage() {
               </Button>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Import Dialog */}
+      <Dialog open={importOpen} onOpenChange={(o) => { if (!o) { setImportOpen(false); resetImport(); } }}>
+        <DialogContent className="rounded-2xl max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">Import from CSV</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-xl bg-secondary/50 p-3 text-xs text-muted-foreground space-y-2">
+              <p>1. Download the template, fill it in Excel or Google Sheets, then save as CSV.</p>
+              <p>2. Required column: <span className="font-mono font-semibold text-foreground">Stone Name</span>. Optional: Size, Packing, Quantity, Location, Notes.</p>
+              <p>3. Location must match one in Settings (Showroom, Godown, etc.) or be left blank.</p>
+              <Button onClick={downloadTemplate} variant="outline" size="sm" className="rounded-lg mt-1">
+                <Download className="h-3.5 w-3.5 mr-1" />Download template
+              </Button>
+            </div>
+
+            <input
+              ref={csvFileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleCsvFile}
+            />
+            <Button
+              onClick={() => csvFileRef.current?.click()}
+              variant="outline"
+              className="w-full rounded-xl border-dashed"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {importFileName ? `Replace: ${importFileName}` : "Choose CSV file"}
+            </Button>
+
+            {importErrors.length > 0 && (
+              <div className="rounded-xl bg-destructive/10 p-3 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-destructive">
+                  <AlertCircle className="h-3.5 w-3.5" />{importErrors.length} issue{importErrors.length === 1 ? "" : "s"}
+                </div>
+                <ul className="list-disc list-inside text-destructive/90 space-y-0.5 max-h-32 overflow-y-auto">
+                  {importErrors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {importRows.length > 0 && (
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="bg-secondary/50 px-3 py-2 text-xs font-semibold text-muted-foreground flex justify-between">
+                  <span>Preview ({importRows.length} row{importRows.length === 1 ? "" : "s"})</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-card border-b border-border">
+                      <tr>
+                        <th className="text-left px-2 py-1.5 font-semibold">Name</th>
+                        <th className="text-left px-2 py-1.5 font-semibold">Size</th>
+                        <th className="text-right px-2 py-1.5 font-semibold">Qty</th>
+                        <th className="text-left px-2 py-1.5 font-semibold">Location</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {importRows.slice(0, 50).map((r, i) => (
+                        <tr key={i}>
+                          <td className="px-2 py-1.5 truncate max-w-[140px]">{r.name || <span className="text-destructive">(empty)</span>}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{r.size}</td>
+                          <td className="px-2 py-1.5 text-right">{r.quantity}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{r.location}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {importRows.length > 50 && (
+                    <p className="text-[11px] text-muted-foreground text-center py-2">…and {importRows.length - 50} more</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={handleConfirmImport}
+                disabled={importRows.length === 0 || bulkAdd.isPending}
+                className="flex-1 bg-accent text-accent-foreground rounded-xl"
+              >
+                {bulkAdd.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                Import {importRows.length > 0 ? `${importRows.length} item${importRows.length === 1 ? "" : "s"}` : ""}
+              </Button>
+              <Button variant="outline" onClick={() => { setImportOpen(false); resetImport(); }} className="rounded-xl">Cancel</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </AppLayout>
