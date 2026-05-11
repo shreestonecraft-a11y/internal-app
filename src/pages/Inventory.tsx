@@ -234,9 +234,17 @@ export default function InventoryPage() {
                         <p className="font-semibold text-foreground text-sm truncate">{s.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{s.size} · {s.packing} · {s.category}</p>
                       </div>
-                      <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 text-muted-foreground">
-                        <Edit2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-1 -mr-1">
+                        <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 text-muted-foreground">
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => { if (window.confirm(`Delete ${s.name}? This can't be undone.`)) handleDelete(s.id); }}
+                          className="p-1.5 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">{s.location}</span>
