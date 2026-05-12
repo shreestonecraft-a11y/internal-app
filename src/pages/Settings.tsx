@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings as SettingsIcon, LogOut, User, Users, Shield, Trash2, ExternalLink, Loader2, MapPin, Plus, Pencil, Check, X } from "lucide-react";
+import { Settings as SettingsIcon, LogOut, User, Users, Shield, Trash2, Loader2, MapPin, Plus, Pencil, Check, X, UserPlus, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AppLayout from "@/components/layout/AppLayout";
 import { useAuth, logout, type Profile } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -87,11 +89,31 @@ export default function SettingsPage() {
 
   const removeUser = useMutation({
     mutationFn: async (id: string) => {
-      // Removes the profile. Auth user remains; remove via Supabase Dashboard if you want full deletion.
       const { error } = await supabase.from('profiles').delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profiles'] }),
+  });
+
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [memberForm, setMemberForm] = useState({ email: "", password: "", fullName: "", role: "staff" as "staff" | "owner" });
+  const [showPassword, setShowPassword] = useState(false);
+
+  const addMember = useMutation({
+    mutationFn: async (form: typeof memberForm) => {
+      const { data, error } = await supabase.functions.invoke('create-team-member', {
+        body: { email: form.email, password: form.password, fullName: form.fullName, role: form.role },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['profiles'] });
+      setAddMemberOpen(false);
+      setMemberForm({ email: "", password: "", fullName: "", role: "staff" });
+      toast.success("Team member added");
+    },
+    onError: (e) => toast.error(`Failed: ${(e as Error).message}`),
   });
 
   async function handleLogout() {
@@ -220,21 +242,14 @@ export default function SettingsPage() {
         {/* User Management — owner only */}
         {isOwner && (
           <section className="glass-card rounded-xl p-5">
-            <h2 className="font-display text-base font-semibold text-foreground mb-2 flex items-center gap-2">
-              <Users className="h-4 w-4 text-accent" />Team Members
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Owners can manage roles. To add a new staff member, create them in the Supabase Dashboard, then they'll appear here.
-            </p>
-
-            <a
-              href={usersDashboardUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline mb-4"
-            >
-              Open Supabase Auth Dashboard <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-base font-semibold text-foreground flex items-center gap-2">
+                <Users className="h-4 w-4 text-accent" />Team Members
+              </h2>
+              <Button onClick={() => setAddMemberOpen(true)} size="sm" variant="outline" className="rounded-lg h-8 text-xs">
+                <UserPlus className="h-3.5 w-3.5 mr-1" />Add Member
+              </Button>
+            </div>
 
             {isLoading ? (
               <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -295,6 +310,83 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Add Member Dialog */}
+      <Dialog open={addMemberOpen} onOpenChange={(o) => { if (!o) { setAddMemberOpen(false); setMemberForm({ email: "", password: "", fullName: "", role: "staff" }); } }}>
+        <DialogContent className="rounded-2xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-accent" />Add Team Member
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Full Name</Label>
+              <Input
+                value={memberForm.fullName}
+                onChange={e => setMemberForm(f => ({ ...f, fullName: e.target.value }))}
+                placeholder="e.g. Rahul Sharma"
+                className="rounded-xl"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Email *</Label>
+              <Input
+                type="email"
+                value={memberForm.email}
+                onChange={e => setMemberForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="e.g. rahul@shreestonecraft.com"
+                className="rounded-xl"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Password *</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={memberForm.password}
+                  onChange={e => setMemberForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder="Min. 6 characters"
+                  className="rounded-xl pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Role</Label>
+              <div className="flex gap-2">
+                {(['staff', 'owner'] as const).map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setMemberForm(f => ({ ...f, role: r }))}
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${memberForm.role === r ? 'bg-accent text-accent-foreground border-accent' : 'bg-background border-border text-muted-foreground hover:border-accent/50'}`}
+                  >
+                    {r.charAt(0).toUpperCase() + r.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                onClick={() => addMember.mutate(memberForm)}
+                disabled={addMember.isPending || !memberForm.email || !memberForm.password}
+                className="flex-1 bg-accent text-accent-foreground rounded-xl"
+              >
+                {addMember.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <UserPlus className="h-4 w-4 mr-1" />}
+                Add Member
+              </Button>
+              <Button variant="outline" className="rounded-xl" onClick={() => setAddMemberOpen(false)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
