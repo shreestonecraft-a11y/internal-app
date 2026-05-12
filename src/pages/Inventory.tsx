@@ -1,18 +1,44 @@
 import { useState, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle, CheckSquare } from "lucide-react";
+import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle, CheckSquare, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AppLayout from "@/components/layout/AppLayout";
 import QtyControls from "@/components/QtyControls";
-import { StoneItem, BulkStoneInput } from "@/lib/store";
+import { StoneItem, BulkStoneInput, uploadStoneImage } from "@/lib/store";
 import { useStones, useUpdateStone, useDeleteStone, useBulkAddStones, useBulkDeleteStones } from "@/lib/hooks/useStones";
 import { useLocations } from "@/lib/hooks/useLocations";
 import { parseSearchQuery } from "@/lib/searchQuery";
 import { parseCsv, buildTemplateCsv } from "@/lib/csv";
 import { toast } from "sonner";
+
+async function compressImage(file: File, maxDim = 1200): Promise<File> {
+  const dataUrl: string = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+  const blob: Blob = await new Promise((res) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d")!.drawImage(img, 0, 0, w, h);
+      c.toBlob(b => res(b!), "image/jpeg", 0.85);
+    };
+    img.onerror = () => res(file);
+    img.src = dataUrl;
+  });
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
 
 function Thumb({ src, name, size = "h-12 w-12" }: { src?: string; name: string; size?: string }) {
   if (src) return <img src={src} alt={name} className={`${size} rounded-lg object-cover border border-border flex-shrink-0`} />;
@@ -78,7 +104,32 @@ export default function InventoryPage() {
       : "recent"
   );
   const [editItem, setEditItem] = useState<StoneItem | null>(null);
-  const [editQty, setEditQty] = useState("");
+  const [editForm, setEditForm] = useState({ name: "", size: "", packing: "", quantity: "", location: "", notes: "", image: "" });
+  const [editUploading, setEditUploading] = useState(false);
+  const editFileRef = useRef<HTMLInputElement>(null);
+
+  function openEdit(s: StoneItem) {
+    setEditItem(s);
+    setEditForm({ name: s.name, size: s.size, packing: s.packing, quantity: String(s.quantity), location: s.location, notes: s.notes, image: s.image ?? "" });
+  }
+  function setEditField(key: string, val: string) { setEditForm(f => ({ ...f, [key]: val })); }
+
+  async function handleEditImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { toast.error("Image too large (max 10MB)"); return; }
+    setEditUploading(true);
+    try {
+      const compressed = await compressImage(f);
+      const url = await uploadStoneImage(compressed);
+      setEditField("image", url);
+      toast.success("Image uploaded");
+    } catch (err) {
+      toast.error(`Upload failed: ${(err as Error).message}`);
+    } finally {
+      setEditUploading(false);
+    }
+  }
 
   const parsed = useMemo(() => parseSearchQuery(search), [search]);
 
@@ -116,12 +167,24 @@ export default function InventoryPage() {
     });
   }
 
-  function handleSetQty() {
+  function handleEditSave() {
     if (!editItem) return;
-    const q = parseInt(editQty);
-    if (isNaN(q) || q < 0) { toast.error("Invalid quantity"); return; }
-    updateStone.mutate({ id: editItem.id, updates: { quantity: q } }, {
-      onSuccess: () => { setEditItem(null); toast.success("Quantity updated"); },
+    if (!editForm.name.trim()) { toast.error("Stone name is required"); return; }
+    if (!editForm.location) { toast.error("Select a location"); return; }
+    const q = parseInt(editForm.quantity);
+    updateStone.mutate({
+      id: editItem.id,
+      updates: {
+        name: editForm.name.trim(),
+        size: editForm.size.trim(),
+        packing: editForm.packing.trim(),
+        quantity: isNaN(q) ? 0 : Math.max(0, q),
+        location: editForm.location,
+        notes: editForm.notes.trim(),
+        image: editForm.image || undefined,
+      },
+    }, {
+      onSuccess: () => { setEditItem(null); toast.success("Stone updated"); },
       onError: (e) => toast.error(`Update failed: ${(e as Error).message}`),
     });
   }
@@ -387,7 +450,7 @@ export default function InventoryPage() {
                       <td className="px-4 py-3">
                         {!selectMode && (
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => openEdit(s)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
                             <button onClick={() => handleDelete(s.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                           </div>
                         )}
@@ -426,7 +489,7 @@ export default function InventoryPage() {
                       </div>
                       {!selectMode && (
                         <div className="flex items-center gap-1 -mr-1">
-                          <button onClick={() => { setEditItem(s); setEditQty(String(s.quantity)); }} className="p-1.5 text-muted-foreground">
+                          <button onClick={() => openEdit(s)} className="p-1.5 text-muted-foreground">
                             <Edit2 className="h-4 w-4" />
                           </button>
                           <button
@@ -454,38 +517,88 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {/* Edit Dialog */}
-      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
-        <DialogContent className="rounded-2xl max-w-sm">
+      {/* Edit Dialog — full form matching Add New Stone */}
+      <Dialog open={!!editItem} onOpenChange={(o) => { if (!o) setEditItem(null); }}>
+        <DialogContent className="rounded-2xl max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display">Update Quantity</DialogTitle>
+            <DialogTitle className="font-display">Edit Stone</DialogTitle>
           </DialogHeader>
           {editItem && (
-            <form onSubmit={(e) => { e.preventDefault(); handleSetQty(); }} className="space-y-4">
-              <p className="text-sm text-muted-foreground">{editItem.name} — {editItem.size}</p>
-              <Input
-                type="number"
-                inputMode="numeric"
-                value={editQty}
-                onChange={e => setEditQty(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSetQty(); } }}
-                className="rounded-xl text-center text-lg font-display font-bold"
-                autoFocus
-              />
-              <div className="grid grid-cols-4 gap-2">
-                {[1, 10, 50, 100].map(n => (
-                  <Button key={n} type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setEditQty(String(Math.max(0, parseInt(editQty || "0") + n)))}>+{n}</Button>
-                ))}
+            <div className="space-y-5">
+              {/* Image */}
+              <div>
+                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Stone Image</Label>
+                <input ref={editFileRef} type="file" accept="image/*" className="hidden" onChange={handleEditImage} />
+                {editForm.image ? (
+                  <div className="relative w-40 h-40 rounded-xl overflow-hidden border border-border">
+                    <img src={editForm.image} alt="preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setEditField("image", "")}
+                      className="absolute top-1 right-1 h-7 w-7 rounded-full bg-black/70 text-white flex items-center justify-center"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => editFileRef.current?.click()}
+                    disabled={editUploading}
+                    className="w-40 h-40 rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 text-muted-foreground hover:bg-secondary/50 hover:border-accent transition disabled:opacity-50"
+                  >
+                    {editUploading ? (
+                      <><Loader2 className="h-7 w-7 animate-spin" /><span className="text-xs font-medium">Uploading…</span></>
+                    ) : (
+                      <><ImagePlus className="h-7 w-7" /><span className="text-xs font-medium">Upload Image</span></>
+                    )}
+                  </button>
+                )}
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[-1, -10, -50].map(n => (
-                  <Button key={n} type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setEditQty(String(Math.max(0, parseInt(editQty || "0") + n)))}>{n}</Button>
-                ))}
+
+              <div>
+                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Stone Name *</Label>
+                <Input value={editForm.name} onChange={e => setEditField("name", e.target.value)} placeholder="e.g. Mint Sandstone" className="rounded-xl" />
               </div>
-              <Button type="submit" disabled={updateStone.isPending} className="w-full bg-accent text-accent-foreground rounded-xl">
-                {updateStone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Save
-              </Button>
-            </form>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Size</Label>
+                  <Input value={editForm.size} onChange={e => setEditField("size", e.target.value)} placeholder="e.g. 24x24" className="rounded-xl" />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Packing</Label>
+                  <Input value={editForm.packing} onChange={e => setEditField("packing", e.target.value)} placeholder="e.g. 10 Sqft/box" className="rounded-xl" />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Quantity</Label>
+                <Input type="number" inputMode="numeric" value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} placeholder="0" className="rounded-xl" />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Location *</Label>
+                <Select value={editForm.location} onValueChange={v => setEditField("location", v)}>
+                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select location" /></SelectTrigger>
+                  <SelectContent>
+                    {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Notes</Label>
+                <Textarea value={editForm.notes} onChange={e => setEditField("notes", e.target.value)} placeholder="Optional remarks" className="rounded-xl min-h-[80px]" />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button onClick={handleEditSave} disabled={updateStone.isPending || editUploading} className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl">
+                  {updateStone.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Save Changes
+                </Button>
+                <Button variant="outline" onClick={() => setEditItem(null)} className="rounded-xl">Cancel</Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
