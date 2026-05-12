@@ -7,7 +7,7 @@ import aonami from "@/assets/aonami.svg";
 function PoweredByAonami() {
   return (
     <a
-      href="https://aonamitech.com/"
+      href="https://crate.aonamitech.com/"
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
