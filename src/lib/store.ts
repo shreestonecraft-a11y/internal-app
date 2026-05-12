@@ -52,6 +52,25 @@ export interface Invoice {
   createdAt: string;
 }
 
+export interface ReturnSlipLineItem {
+  id: string;
+  stoneId?: string;
+  name: string;
+  size: string;
+  packing: string;
+  quantity: number;
+  image?: string;
+}
+
+export interface ReturnSlip {
+  id: string;
+  number: string;
+  date: string;
+  notes: string;
+  items: ReturnSlipLineItem[];
+  createdAt: string;
+}
+
 export const CATEGORIES = [
   'Panel', 'Patti', 'CNC', 'Rockface', 'Butching', 'Tumble',
   'Pattern', 'Jaali', 'Moulding', 'Random', 'Tile', 'Special Piece', 'Other',
@@ -504,6 +523,99 @@ export async function createInvoice(inv: Omit<Invoice, 'id' | 'createdAt'>): Pro
 
 export async function deleteInvoice(id: string): Promise<void> {
   const { error } = await supabase.from('invoices').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// =========================================
+// Return Slips
+// =========================================
+interface ReturnSlipRow {
+  id: string;
+  number: string;
+  date: string;
+  notes: string;
+  created_at: string;
+  return_slip_line_items?: Array<{
+    id: string;
+    stone_id: string | null;
+    name: string;
+    size: string;
+    packing: string;
+    quantity: number;
+    image_url: string | null;
+    position: number;
+  }>;
+}
+
+function mapReturnSlip(r: ReturnSlipRow): ReturnSlip {
+  const items = (r.return_slip_line_items ?? [])
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map(li => ({
+      id: li.id,
+      stoneId: li.stone_id ?? undefined,
+      name: li.name,
+      size: li.size,
+      packing: li.packing,
+      quantity: Number(li.quantity),
+      image: li.image_url ?? undefined,
+    }));
+  return {
+    id: r.id,
+    number: r.number,
+    date: r.date,
+    notes: r.notes ?? '',
+    items,
+    createdAt: r.created_at,
+  };
+}
+
+export async function getReturnSlips(): Promise<ReturnSlip[]> {
+  const { data, error } = await supabase
+    .from('return_slips')
+    .select('*, return_slip_line_items(*)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as ReturnSlipRow[]).map(mapReturnSlip);
+}
+
+export async function nextReturnSlipNumber(): Promise<string> {
+  const { data } = await supabase
+    .from('return_slips')
+    .select('number')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const max = data?.number ? parseInt(data.number.replace(/\D/g, ''), 10) : 1000;
+  return `RET-${String(isNaN(max) ? 1001 : max + 1).padStart(4, '0')}`;
+}
+
+export async function createReturnSlip(slip: Omit<ReturnSlip, 'id' | 'createdAt'>): Promise<ReturnSlip> {
+  const { data, error } = await supabase.rpc('create_return_slip', {
+    p_notes: slip.notes,
+    p_date: slip.date.slice(0, 10),
+    p_items: slip.items.map(it => ({
+      stone_id: it.stoneId ?? null,
+      name: it.name,
+      size: it.size,
+      packing: it.packing,
+      quantity: it.quantity,
+      image_url: it.image ?? null,
+    })),
+  });
+  if (error) throw error;
+
+  const { data: full, error: fetchErr } = await supabase
+    .from('return_slips')
+    .select('*, return_slip_line_items(*)')
+    .eq('id', (data as { id: string }).id)
+    .single();
+  if (fetchErr) throw fetchErr;
+  return mapReturnSlip(full as ReturnSlipRow);
+}
+
+export async function deleteReturnSlip(id: string): Promise<void> {
+  const { error } = await supabase.from('return_slips').delete().eq('id', id);
   if (error) throw error;
 }
 
