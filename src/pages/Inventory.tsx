@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle, CheckSquare, ImagePlus } from "lucide-react";
+import { Search, Plus, Filter, Package, Edit2, Trash2, X, ImageIcon, Loader2, ArrowUpDown, Upload, Download, AlertCircle, CheckSquare, ImagePlus, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,7 +8,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AppLayout from "@/components/layout/AppLayout";
-import QtyControls from "@/components/QtyControls";
 import { StoneItem, BulkStoneInput, uploadStoneImage } from "@/lib/store";
 import { useStones, useUpdateStone, useDeleteStone, useBulkAddStones, useBulkDeleteStones } from "@/lib/hooks/useStones";
 import { useLocations } from "@/lib/hooks/useLocations";
@@ -158,27 +157,18 @@ export default function InventoryPage() {
     return sorted;
   }, [stones, parsed, filterLoc, sortBy]);
 
-  function commitQty(id: string, newQ: number) {
-    const s = stones.find(x => x.id === id);
-    if (!s || s.quantity === newQ) return;
-    updateStone.mutate({ id, updates: { quantity: newQ } }, {
-      onSuccess: () => toast.success(`${s.name} → ${newQ}`),
-      onError: (e) => toast.error(`Update failed: ${(e as Error).message}`),
-    });
-  }
-
   function handleEditSave() {
     if (!editItem) return;
     if (!editForm.name.trim()) { toast.error("Stone name is required"); return; }
     if (!editForm.location) { toast.error("Select a location"); return; }
-    const q = parseInt(editForm.quantity);
+    // Guardrail: quantity is intentionally NOT included here.
+    // Stock can only change via Dispatch Notes (deduct) or Return Slips (add back).
     updateStone.mutate({
       id: editItem.id,
       updates: {
         name: editForm.name.trim(),
         size: editForm.size.trim(),
         packing: editForm.packing.trim(),
-        quantity: isNaN(q) ? 0 : Math.max(0, q),
         location: editForm.location,
         notes: editForm.notes.trim(),
         image: editForm.image || undefined,
@@ -438,13 +428,12 @@ export default function InventoryPage() {
                       <td className="px-4 py-3 text-muted-foreground">{s.size}</td>
                       <td className="px-4 py-3 text-muted-foreground">{s.packing}</td>
                       <td className="px-4 py-3 text-right">
-                        {selectMode ? (
-                          <span className="text-sm font-display font-bold text-foreground">{s.quantity}</span>
-                        ) : (
-                          <div className="flex justify-end">
-                            <QtyControls quantity={s.quantity} onCommit={(q) => commitQty(s.id, q)} />
-                          </div>
-                        )}
+                        <span
+                          className={`text-sm font-display font-bold ${s.quantity <= 5 ? "text-destructive" : "text-foreground"}`}
+                          title="Quantity changes only via Dispatch or Return Slip"
+                        >
+                          {s.quantity}
+                        </span>
                       </td>
                       <td className="px-4 py-3"><span className="text-xs px-2 py-1 rounded-full bg-secondary text-muted-foreground">{s.location}</span></td>
                       <td className="px-4 py-3">
@@ -503,11 +492,12 @@ export default function InventoryPage() {
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">{s.location}</span>
-                      {selectMode ? (
-                        <span className="text-sm font-display font-bold text-foreground">Qty: {s.quantity}</span>
-                      ) : (
-                        <QtyControls quantity={s.quantity} onCommit={(q) => commitQty(s.id, q)} size="md" />
-                      )}
+                      <span
+                        className={`text-base font-display font-bold ${s.quantity <= 5 ? "text-destructive" : "text-foreground"}`}
+                        title="Quantity changes only via Dispatch or Return Slip"
+                      >
+                        Qty: {s.quantity}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -573,8 +563,21 @@ export default function InventoryPage() {
               </div>
 
               <div>
-                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Quantity</Label>
-                <Input type="number" inputMode="numeric" value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} placeholder="0" className="rounded-xl" />
+                <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block flex items-center gap-1.5">
+                  Quantity
+                  <Lock className="h-3 w-3 text-muted-foreground" />
+                </Label>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={editForm.quantity}
+                  readOnly
+                  disabled
+                  className="rounded-xl bg-secondary/60 cursor-not-allowed text-muted-foreground"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+                  Quantity can only change through a <span className="font-semibold text-foreground">Dispatch Note</span> (deduct) or <span className="font-semibold text-emerald-600">Return Slip</span> (add back). Go to <span className="font-semibold text-foreground">Invoices</span> to create one.
+                </p>
               </div>
 
               <div>
