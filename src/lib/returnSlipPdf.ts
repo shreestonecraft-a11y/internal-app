@@ -11,7 +11,7 @@ function formatDate(iso: string) {
 const COMPANY_ADDRESS = "2-4-208/5, Beside Maruthi Nexa Showroom, Snehapuri Colony, Nagole, Hyderabad - 500102";
 const COMPANY_GST = "36ADHPD1781B1Z0";
 
-export async function downloadReturnSlipPdf(slip: ReturnSlip) {
+async function buildReturnSlipPdf(slip: ReturnSlip): Promise<jsPDF> {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const GREEN: [number, number, number] = [22, 163, 74];
@@ -137,5 +137,34 @@ export async function downloadReturnSlipPdf(slip: ReturnSlip) {
   doc.setFontSize(8);
   doc.text("Shree Stone Craft — Internal Return Record", W / 2, pageH - 30, { align: "center" });
 
+  return doc;
+}
+
+export async function downloadReturnSlipPdf(slip: ReturnSlip) {
+  const doc = await buildReturnSlipPdf(slip);
   doc.save(`${slip.number}.pdf`);
+}
+
+/**
+ * Share PDF using the native Web Share API with the file ONLY (no url, no
+ * title, no text). See shareInvoicePdf for rationale.
+ */
+export async function shareReturnSlipPdf(slip: ReturnSlip): Promise<"shared" | "downloaded" | "cancelled"> {
+  const doc = await buildReturnSlipPdf(slip);
+  const filename = `${slip.number}.pdf`;
+  const blob = doc.output("blob");
+  const file = new File([blob], filename, { type: "application/pdf" });
+
+  const nav = typeof navigator !== "undefined" ? (navigator as Navigator & { canShare?: (data: ShareData) => boolean }) : null;
+  if (nav && typeof nav.share === "function" && nav.canShare && nav.canShare({ files: [file] })) {
+    try {
+      await nav.share({ files: [file] });
+      return "shared";
+    } catch (err) {
+      if ((err as DOMException)?.name === "AbortError") return "cancelled";
+    }
+  }
+
+  doc.save(filename);
+  return "downloaded";
 }

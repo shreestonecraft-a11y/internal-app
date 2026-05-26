@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, FileText, Download, Trash2, X, Search, ImageIcon, Loader2, Undo2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Plus, FileText, Download, Trash2, X, Search, ImageIcon, Loader2, Undo2, Pencil, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,14 +10,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AppLayout from "@/components/layout/AppLayout";
 import { Invoice, InvoiceLineItem, StoneItem, ReturnSlip, ReturnSlipLineItem } from "@/lib/store";
 import {
-  useInvoices, useCreateInvoice, useDeleteInvoice, useNextInvoiceNumber,
+  useInvoices, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useNextInvoiceNumber,
 } from "@/lib/hooks/useInvoices";
 import {
-  useReturnSlips, useCreateReturnSlip, useDeleteReturnSlip, useNextReturnSlipNumber,
+  useReturnSlips, useCreateReturnSlip, useUpdateReturnSlip, useDeleteReturnSlip, useNextReturnSlipNumber,
 } from "@/lib/hooks/useReturnSlips";
 import { useStones } from "@/lib/hooks/useStones";
-import { downloadInvoicePdf } from "@/lib/invoicePdf";
-import { downloadReturnSlipPdf } from "@/lib/returnSlipPdf";
+import { downloadInvoicePdf, shareInvoicePdf } from "@/lib/invoicePdf";
+import { downloadReturnSlipPdf, shareReturnSlipPdf } from "@/lib/returnSlipPdf";
 import { parseSearchQuery } from "@/lib/searchQuery";
 import { toast } from "sonner";
 
@@ -32,21 +33,41 @@ export default function InvoicesPage() {
   const [tab, setTab] = useState<"dispatch" | "returns">("dispatch");
   const [newDispatchOpen, setNewDispatchOpen] = useState(false);
   const [newReturnOpen, setNewReturnOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [editingReturn, setEditingReturn] = useState<ReturnSlip | null>(null);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [viewingReturn, setViewingReturn] = useState<ReturnSlip | null>(null);
 
+  // Auto-open the New Dispatch dialog when arriving from the bottom "+" button
+  // (link is /invoices?new=dispatch). Consume the param so it doesn't re-fire on re-renders.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const which = searchParams.get("new");
+    if (which === "dispatch") {
+      setNewDispatchOpen(true);
+      setTab("dispatch");
+      searchParams.delete("new");
+      setSearchParams(searchParams, { replace: true });
+    } else if (which === "return") {
+      setNewReturnOpen(true);
+      setTab("returns");
+      searchParams.delete("new");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   function handleDeleteInvoice(id: string) {
-    if (!confirm("Delete this dispatch note? Stock already deducted will not be restored.")) return;
+    if (!confirm("Delete this dispatch note? Stock that was deducted will be restored to inventory.")) return;
     deleteInvoice.mutate(id, {
-      onSuccess: () => toast.success("Deleted"),
+      onSuccess: () => toast.success("Deleted · stock restored"),
       onError: (e) => toast.error(`Delete failed: ${(e as Error).message}`),
     });
   }
 
   function handleDeleteReturn(id: string) {
-    if (!confirm("Delete this return slip? Stock that was added back will not be re-deducted.")) return;
+    if (!confirm("Delete this return slip? Stock that was added back will be re-deducted from inventory.")) return;
     deleteReturnSlip.mutate(id, {
-      onSuccess: () => toast.success("Deleted"),
+      onSuccess: () => toast.success("Deleted · stock re-deducted"),
       onError: (e) => toast.error(`Delete failed: ${(e as Error).message}`),
     });
   }
@@ -214,17 +235,27 @@ export default function InvoicesPage() {
         </Tabs>
       </div>
 
-      <NewInvoiceDialog open={newDispatchOpen} onOpenChange={setNewDispatchOpen} />
-      <NewReturnSlipDialog open={newReturnOpen} onOpenChange={setNewReturnOpen} />
+      <NewInvoiceDialog
+        open={newDispatchOpen || !!editingInvoice}
+        onOpenChange={(o) => { if (!o) { setNewDispatchOpen(false); setEditingInvoice(null); } else if (!editingInvoice) setNewDispatchOpen(true); }}
+        editing={editingInvoice}
+      />
+      <NewReturnSlipDialog
+        open={newReturnOpen || !!editingReturn}
+        onOpenChange={(o) => { if (!o) { setNewReturnOpen(false); setEditingReturn(null); } else if (!editingReturn) setNewReturnOpen(true); }}
+        editing={editingReturn}
+      />
       <ViewInvoiceDialog
         invoice={viewingInvoice}
         onClose={() => setViewingInvoice(null)}
         onDelete={(id) => { handleDeleteInvoice(id); setViewingInvoice(null); }}
+        onEdit={(inv) => { setViewingInvoice(null); setEditingInvoice(inv); }}
       />
       <ViewReturnSlipDialog
         slip={viewingReturn}
         onClose={() => setViewingReturn(null)}
         onDelete={(id) => { handleDeleteReturn(id); setViewingReturn(null); }}
+        onEdit={(slip) => { setViewingReturn(null); setEditingReturn(slip); }}
       />
     </AppLayout>
   );
@@ -232,9 +263,15 @@ export default function InvoicesPage() {
 
 // ─── View Dialogs ────────────────────────────────────────────────────────────
 
-function ViewInvoiceDialog({ invoice, onClose, onDelete }: { invoice: Invoice | null; onClose: () => void; onDelete: (id: string) => void; }) {
+function ViewInvoiceDialog({ invoice, onClose, onDelete, onEdit }: { invoice: Invoice | null; onClose: () => void; onDelete: (id: string) => void; onEdit: (inv: Invoice) => void; }) {
   if (!invoice) return null;
   const totalQty = invoice.items.reduce((s, it) => s + it.quantity, 0);
+
+  async function handleShare() {
+    const res = await shareInvoicePdf(invoice!);
+    if (res === "downloaded") toast.info("PDF downloaded — share unavailable on this browser");
+    else if (res === "shared") toast.success("Shared");
+  }
 
   return (
     <Dialog open={!!invoice} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -283,13 +320,19 @@ function ViewInvoiceDialog({ invoice, onClose, onDelete }: { invoice: Invoice | 
               <p className="text-sm text-foreground whitespace-pre-wrap bg-secondary/40 rounded-lg p-3">{invoice.notes}</p>
             </div>
           )}
-          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2 border-t border-border">
+          <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap gap-2 sm:justify-end pt-2 border-t border-border">
             <Button variant="ghost" className="rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(invoice.id)}>
               <Trash2 className="h-4 w-4 mr-1" />Delete
             </Button>
+            <Button variant="outline" className="rounded-xl" onClick={() => onEdit(invoice)}>
+              <Pencil className="h-4 w-4 mr-1" />Edit
+            </Button>
             <Button variant="outline" className="rounded-xl" onClick={onClose}>Close</Button>
-            <Button className="bg-accent text-accent-foreground rounded-xl" onClick={() => downloadInvoicePdf(invoice)}>
-              <Download className="h-4 w-4 mr-1" />Download PDF
+            <Button variant="outline" className="rounded-xl" onClick={() => downloadInvoicePdf(invoice)}>
+              <Download className="h-4 w-4 mr-1" />Download
+            </Button>
+            <Button className="bg-accent text-accent-foreground rounded-xl" onClick={handleShare}>
+              <Share2 className="h-4 w-4 mr-1" />Share PDF
             </Button>
           </div>
         </div>
@@ -298,9 +341,15 @@ function ViewInvoiceDialog({ invoice, onClose, onDelete }: { invoice: Invoice | 
   );
 }
 
-function ViewReturnSlipDialog({ slip, onClose, onDelete }: { slip: ReturnSlip | null; onClose: () => void; onDelete: (id: string) => void; }) {
+function ViewReturnSlipDialog({ slip, onClose, onDelete, onEdit }: { slip: ReturnSlip | null; onClose: () => void; onDelete: (id: string) => void; onEdit: (slip: ReturnSlip) => void; }) {
   if (!slip) return null;
   const totalQty = slip.items.reduce((s, it) => s + it.quantity, 0);
+
+  async function handleShare() {
+    const res = await shareReturnSlipPdf(slip!);
+    if (res === "downloaded") toast.info("PDF downloaded — share unavailable on this browser");
+    else if (res === "shared") toast.success("Shared");
+  }
 
   return (
     <Dialog open={!!slip} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -349,13 +398,19 @@ function ViewReturnSlipDialog({ slip, onClose, onDelete }: { slip: ReturnSlip | 
               <p className="text-sm text-foreground whitespace-pre-wrap bg-secondary/40 rounded-lg p-3">{slip.notes}</p>
         </div>
           )}
-          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2 border-t border-border">
+          <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap gap-2 sm:justify-end pt-2 border-t border-border">
             <Button variant="ghost" className="rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(slip.id)}>
               <Trash2 className="h-4 w-4 mr-1" />Delete
             </Button>
+            <Button variant="outline" className="rounded-xl" onClick={() => onEdit(slip)}>
+              <Pencil className="h-4 w-4 mr-1" />Edit
+            </Button>
             <Button variant="outline" className="rounded-xl" onClick={onClose}>Close</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl" onClick={() => downloadReturnSlipPdf(slip)}>
-              <Download className="h-4 w-4 mr-1" />Download PDF
+            <Button variant="outline" className="rounded-xl" onClick={() => downloadReturnSlipPdf(slip)}>
+              <Download className="h-4 w-4 mr-1" />Download
+            </Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl" onClick={handleShare}>
+              <Share2 className="h-4 w-4 mr-1" />Share PDF
             </Button>
           </div>
         </div>
@@ -366,11 +421,13 @@ function ViewReturnSlipDialog({ slip, onClose, onDelete }: { slip: ReturnSlip | 
 
 // ─── New Dispatch Dialog ──────────────────────────────────────────────────────
 
-function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (b: boolean) => void; }) {
+function NewInvoiceDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (b: boolean) => void; editing?: Invoice | null }) {
+  const isEdit = !!editing;
   const { data: allStones = [] } = useStones();
   const stones = useMemo(() => allStones.filter(s => s.status === "active"), [allStones]);
-  const { data: nextNumber } = useNextInvoiceNumber(open);
+  const { data: nextNumber } = useNextInvoiceNumber(open && !isEdit);
   const createInvoice = useCreateInvoice();
+  const updateInvoice = useUpdateInvoice();
   const [number, setNumber] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
@@ -378,15 +435,23 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
 
+  // Reset / pre-fill when dialog opens. Editing → seed from invoice (deep-clone items
+  // to avoid mutating the cached object). Creating → blank.
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (editing) {
+      setNumber(editing.number);
+      setDate(editing.date.slice(0, 10));
+      setNotes(editing.notes ?? "");
+      setItems(editing.items.map(it => ({ ...it })));
+    } else {
       setDate(new Date().toISOString().slice(0, 10));
       setNotes("");
       setItems([]);
     }
-  }, [open]);
+  }, [open, editing]);
 
-  useEffect(() => { if (nextNumber) setNumber(nextNumber); }, [nextNumber]);
+  useEffect(() => { if (!isEdit && nextNumber) setNumber(nextNumber); }, [nextNumber, isEdit]);
 
   const totalQty = useMemo(() => items.reduce((s, it) => s + it.quantity, 0), [items]);
 
@@ -402,7 +467,7 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       name: s.name,
       size: s.size,
       packing: s.packing,
-      quantity: 1,
+      quantity: 0, // blank by default — user types qty
       image: s.image,
     }]);
     setPickerOpen(false);
@@ -418,25 +483,43 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   }
 
   function adjustQty(id: string, delta: number) {
-    setItems(prev => prev.map(it => it.id === id ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it));
+    setItems(prev => prev.map(it => it.id === id ? { ...it, quantity: Math.max(0, it.quantity + delta) } : it));
   }
 
   function handleCreate(downloadAfter: boolean) {
-    if (items.length === 0) { toast.error("Add at least one item"); return; }
-    createInvoice.mutate({
+    // Filter out items with zero qty (blank input) before submit.
+    const itemsToSubmit = items.filter(it => it.quantity > 0);
+    if (itemsToSubmit.length === 0) { toast.error("Enter a quantity for at least one item"); return; }
+
+    const payload = {
       number: number.trim(),
       date: new Date(date).toISOString(),
       notes: notes.trim(),
-      items,
-    }, {
-      onSuccess: (created) => {
-        toast.success(`${created.number} created · stock updated`);
-        onOpenChange(false);
-        if (downloadAfter) downloadInvoicePdf(created);
-      },
-      onError: (e) => toast.error(`Create failed: ${(e as Error).message}`),
-    });
+      items: itemsToSubmit,
+    };
+
+    if (isEdit && editing) {
+      updateInvoice.mutate({ id: editing.id, updates: payload }, {
+        onSuccess: (updated) => {
+          toast.success(`${updated.number} updated · stock recomputed`);
+          onOpenChange(false);
+          if (downloadAfter) downloadInvoicePdf(updated);
+        },
+        onError: (e) => toast.error(`Update failed: ${(e as Error).message}`),
+      });
+    } else {
+      createInvoice.mutate(payload, {
+        onSuccess: (created) => {
+          toast.success(`${created.number} created · stock updated`);
+          onOpenChange(false);
+          if (downloadAfter) downloadInvoicePdf(created);
+        },
+        onError: (e) => toast.error(`Create failed: ${(e as Error).message}`),
+      });
+    }
   }
+
+  const isPending = createInvoice.isPending || updateInvoice.isPending;
 
   const pickerParsed = useMemo(() => parseSearchQuery(pickerSearch), [pickerSearch]);
   const filteredStones = useMemo(() => {
@@ -456,7 +539,8 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       <DialogContent className="rounded-2xl max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
-            <FileText className="h-5 w-5 text-accent" />New Dispatch Note
+            <FileText className="h-5 w-5 text-accent" />
+            {isEdit ? "Edit Dispatch Note" : "New Dispatch Note"}
           </DialogTitle>
         </DialogHeader>
 
@@ -464,7 +548,7 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Note #</Label>
-              <Input value={number} onChange={e => setNumber(e.target.value)} className="rounded-xl font-mono" />
+              <Input value={number} onChange={e => setNumber(e.target.value)} className="rounded-xl font-mono" readOnly={isEdit} />
             </div>
             <div>
               <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Date</Label>
@@ -503,8 +587,16 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                       <Input
                         type="number"
                         inputMode="numeric"
-                        value={it.quantity}
-                        onChange={e => updateItem(it.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                        min={0}
+                        placeholder="0"
+                        // Blank when qty is 0 — easier on iPhone (no need to clear "1" first).
+                        value={it.quantity || ""}
+                        onChange={e => {
+                          const v = e.target.value;
+                          if (v === "") { updateItem(it.id, { quantity: 0 }); return; }
+                          const n = parseInt(v, 10);
+                          updateItem(it.id, { quantity: isNaN(n) ? 0 : Math.max(0, n) });
+                        }}
                         className="rounded-lg h-8 text-center text-sm font-bold w-16 px-1"
                       />
                       <button type="button" onClick={() => adjustQty(it.id, 1)} className="h-8 w-8 rounded bg-secondary text-foreground text-sm font-bold hover:bg-success hover:text-success-foreground transition-colors">+</button>
@@ -533,11 +625,11 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           )}
 
           <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
-            <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={createInvoice.isPending}>Cancel</Button>
-            <Button variant="outline" className="rounded-xl" onClick={() => handleCreate(false)} disabled={createInvoice.isPending}>
-              {createInvoice.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}Save
+            <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={isPending}>Cancel</Button>
+            <Button variant="outline" className="rounded-xl" onClick={() => handleCreate(false)} disabled={isPending}>
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}{isEdit ? "Save Changes" : "Save"}
             </Button>
-            <Button className="bg-accent text-accent-foreground rounded-xl" onClick={() => handleCreate(true)} disabled={createInvoice.isPending}>
+            <Button className="bg-accent text-accent-foreground rounded-xl" onClick={() => handleCreate(true)} disabled={isPending}>
               <Download className="h-4 w-4 mr-1" />Save & Download PDF
             </Button>
           </div>
@@ -590,11 +682,13 @@ function NewInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 // ─── New Return Slip Dialog ───────────────────────────────────────────────────
 
-function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (b: boolean) => void; }) {
+function NewReturnSlipDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (b: boolean) => void; editing?: ReturnSlip | null }) {
+  const isEdit = !!editing;
   const { data: allStones = [] } = useStones();
   const stones = useMemo(() => allStones.filter(s => s.status === "active"), [allStones]);
-  const { data: nextNumber } = useNextReturnSlipNumber(open);
+  const { data: nextNumber } = useNextReturnSlipNumber(open && !isEdit);
   const createReturnSlip = useCreateReturnSlip();
+  const updateReturnSlip = useUpdateReturnSlip();
   const [number, setNumber] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
@@ -603,14 +697,20 @@ function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [pickerSearch, setPickerSearch] = useState("");
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (editing) {
+      setNumber(editing.number);
+      setDate(editing.date.slice(0, 10));
+      setNotes(editing.notes ?? "");
+      setItems(editing.items.map(it => ({ ...it })));
+    } else {
       setDate(new Date().toISOString().slice(0, 10));
       setNotes("");
       setItems([]);
     }
-  }, [open]);
+  }, [open, editing]);
 
-  useEffect(() => { if (nextNumber) setNumber(nextNumber); }, [nextNumber]);
+  useEffect(() => { if (!isEdit && nextNumber) setNumber(nextNumber); }, [nextNumber, isEdit]);
 
   const totalQty = useMemo(() => items.reduce((s, it) => s + it.quantity, 0), [items]);
 
@@ -626,7 +726,7 @@ function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       name: s.name,
       size: s.size,
       packing: s.packing,
-      quantity: 1,
+      quantity: 0, // blank by default
       image: s.image,
     }]);
     setPickerOpen(false);
@@ -642,25 +742,42 @@ function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   }
 
   function adjustQty(id: string, delta: number) {
-    setItems(prev => prev.map(it => it.id === id ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it));
+    setItems(prev => prev.map(it => it.id === id ? { ...it, quantity: Math.max(0, it.quantity + delta) } : it));
   }
 
   function handleCreate(downloadAfter: boolean) {
-    if (items.length === 0) { toast.error("Add at least one item"); return; }
-    createReturnSlip.mutate({
+    const itemsToSubmit = items.filter(it => it.quantity > 0);
+    if (itemsToSubmit.length === 0) { toast.error("Enter a quantity for at least one item"); return; }
+
+    const payload = {
       number: number.trim(),
       date: new Date(date).toISOString(),
       notes: notes.trim(),
-      items,
-    }, {
-      onSuccess: (created) => {
-        toast.success(`${created.number} created · stock restored`);
-        onOpenChange(false);
-        if (downloadAfter) downloadReturnSlipPdf(created);
-      },
-      onError: (e) => toast.error(`Create failed: ${(e as Error).message}`),
-    });
+      items: itemsToSubmit,
+    };
+
+    if (isEdit && editing) {
+      updateReturnSlip.mutate({ id: editing.id, updates: payload }, {
+        onSuccess: (updated) => {
+          toast.success(`${updated.number} updated · stock recomputed`);
+          onOpenChange(false);
+          if (downloadAfter) downloadReturnSlipPdf(updated);
+        },
+        onError: (e) => toast.error(`Update failed: ${(e as Error).message}`),
+      });
+    } else {
+      createReturnSlip.mutate(payload, {
+        onSuccess: (created) => {
+          toast.success(`${created.number} created · stock restored`);
+          onOpenChange(false);
+          if (downloadAfter) downloadReturnSlipPdf(created);
+        },
+        onError: (e) => toast.error(`Create failed: ${(e as Error).message}`),
+      });
+    }
   }
+
+  const isPending = createReturnSlip.isPending || updateReturnSlip.isPending;
 
   const pickerParsed = useMemo(() => parseSearchQuery(pickerSearch), [pickerSearch]);
   const filteredStones = useMemo(() => {
@@ -680,7 +797,8 @@ function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       <DialogContent className="rounded-2xl max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
-            <Undo2 className="h-5 w-5 text-emerald-600" />New Return Slip
+            <Undo2 className="h-5 w-5 text-emerald-600" />
+            {isEdit ? "Edit Return Slip" : "New Return Slip"}
           </DialogTitle>
         </DialogHeader>
 
@@ -727,8 +845,15 @@ function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                       <Input
                         type="number"
                         inputMode="numeric"
-                        value={it.quantity}
-                        onChange={e => updateItem(it.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                        min={0}
+                        placeholder="0"
+                        value={it.quantity || ""}
+                        onChange={e => {
+                          const v = e.target.value;
+                          if (v === "") { updateItem(it.id, { quantity: 0 }); return; }
+                          const n = parseInt(v, 10);
+                          updateItem(it.id, { quantity: isNaN(n) ? 0 : Math.max(0, n) });
+                        }}
                         className="rounded-lg h-8 text-center text-sm font-bold w-16 px-1"
                       />
                       <button type="button" onClick={() => adjustQty(it.id, 1)} className="h-8 w-8 rounded bg-secondary text-foreground text-sm font-bold hover:bg-emerald-500 hover:text-white transition-colors">+</button>
@@ -757,11 +882,11 @@ function NewReturnSlipDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           )}
 
           <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
-            <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={createReturnSlip.isPending}>Cancel</Button>
-            <Button variant="outline" className="rounded-xl" onClick={() => handleCreate(false)} disabled={createReturnSlip.isPending}>
-              {createReturnSlip.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}Save
+            <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={isPending}>Cancel</Button>
+            <Button variant="outline" className="rounded-xl" onClick={() => handleCreate(false)} disabled={isPending}>
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}{isEdit ? "Save Changes" : "Save"}
             </Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl" onClick={() => handleCreate(true)} disabled={createReturnSlip.isPending}>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl" onClick={() => handleCreate(true)} disabled={isPending}>
               <Download className="h-4 w-4 mr-1" />Save & Download PDF
             </Button>
           </div>

@@ -11,7 +11,7 @@ function formatDate(iso: string) {
 const COMPANY_ADDRESS = "2-4-208/5, Beside Maruthi Nexa Showroom, Snehapuri Colony, Nagole, Hyderabad - 500102";
 const COMPANY_GST = "36ADHPD1781B1Z0";
 
-export async function downloadInvoicePdf(inv: Invoice) {
+async function buildInvoicePdf(inv: Invoice): Promise<jsPDF> {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const RED: [number, number, number] = [220, 38, 38];
@@ -145,5 +145,39 @@ export async function downloadInvoicePdf(inv: Invoice) {
   doc.setFontSize(8);
   doc.text("Shree Stone Craft — Internal Dispatch Record", W / 2, pageH - 30, { align: "center" });
 
+  return doc;
+}
+
+export async function downloadInvoicePdf(inv: Invoice) {
+  const doc = await buildInvoicePdf(inv);
   doc.save(`${inv.number}.pdf`);
+}
+
+/**
+ * Share PDF using the native Web Share API with the file ONLY (no url, no
+ * title, no text) — so when the user picks WhatsApp from the share sheet,
+ * only the PDF is attached. Avoids iOS Safari adding the page URL by default.
+ * Falls back to download on browsers that can't share files.
+ */
+export async function shareInvoicePdf(inv: Invoice): Promise<"shared" | "downloaded" | "cancelled"> {
+  const doc = await buildInvoicePdf(inv);
+  const filename = `${inv.number}.pdf`;
+  const blob = doc.output("blob");
+  const file = new File([blob], filename, { type: "application/pdf" });
+
+  const nav = typeof navigator !== "undefined" ? (navigator as Navigator & { canShare?: (data: ShareData) => boolean }) : null;
+  if (nav && typeof nav.share === "function" && nav.canShare && nav.canShare({ files: [file] })) {
+    try {
+      // Files-only: no url, no text, no title — keeps WhatsApp from auto-attaching a link.
+      await nav.share({ files: [file] });
+      return "shared";
+    } catch (err) {
+      // User cancelled OR share aborted — don't fall back to download (would be unexpected).
+      if ((err as DOMException)?.name === "AbortError") return "cancelled";
+      // Other share error — fall through to download as a safety net.
+    }
+  }
+
+  doc.save(filename);
+  return "downloaded";
 }

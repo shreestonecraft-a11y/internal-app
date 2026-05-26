@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createReturnSlip, deleteReturnSlip, getReturnSlips, nextReturnSlipNumber } from '@/lib/store';
+import { createReturnSlip, deleteReturnSlip, getReturnSlips, nextReturnSlipNumber, updateReturnSlip } from '@/lib/store';
+import type { ReturnSlip } from '@/lib/store';
 
 const RETURN_SLIPS_KEY = ['returnSlips'] as const;
 
@@ -29,10 +30,28 @@ export function useCreateReturnSlip() {
   });
 }
 
+export function useUpdateReturnSlip() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Omit<ReturnSlip, 'id' | 'createdAt' | 'number'> }) =>
+      updateReturnSlip(id, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: RETURN_SLIPS_KEY });
+      qc.invalidateQueries({ queryKey: ['stones'] });
+      qc.invalidateQueries({ queryKey: ['logs'] });
+    },
+  });
+}
+
 export function useDeleteReturnSlip() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: deleteReturnSlip,
-    onSuccess: () => qc.invalidateQueries({ queryKey: RETURN_SLIPS_KEY }),
+    // Delete now re-deducts stock via RPC — invalidate stones + logs too.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: RETURN_SLIPS_KEY });
+      qc.invalidateQueries({ queryKey: ['stones'] });
+      qc.invalidateQueries({ queryKey: ['logs'] });
+    },
   });
 }

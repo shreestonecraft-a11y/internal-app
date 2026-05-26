@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createInvoice, deleteInvoice, getInvoices, nextInvoiceNumber } from '@/lib/store';
+import { createInvoice, deleteInvoice, getInvoices, nextInvoiceNumber, updateInvoice } from '@/lib/store';
+import type { Invoice } from '@/lib/store';
 
 const INVOICES_KEY = ['invoices'] as const;
 
@@ -29,10 +30,28 @@ export function useCreateInvoice() {
   });
 }
 
+export function useUpdateInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Omit<Invoice, 'id' | 'createdAt' | 'number'> }) =>
+      updateInvoice(id, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: INVOICES_KEY });
+      qc.invalidateQueries({ queryKey: ['stones'] });
+      qc.invalidateQueries({ queryKey: ['logs'] });
+    },
+  });
+}
+
 export function useDeleteInvoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: deleteInvoice,
-    onSuccess: () => qc.invalidateQueries({ queryKey: INVOICES_KEY }),
+    // Delete now restores stock via RPC — must invalidate stones + logs too.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: INVOICES_KEY });
+      qc.invalidateQueries({ queryKey: ['stones'] });
+      qc.invalidateQueries({ queryKey: ['logs'] });
+    },
   });
 }

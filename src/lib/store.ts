@@ -522,8 +522,37 @@ export async function createInvoice(inv: Omit<Invoice, 'id' | 'createdAt'>): Pro
 }
 
 export async function deleteInvoice(id: string): Promise<void> {
-  const { error } = await supabase.from('invoices').delete().eq('id', id);
+  // Atomic RPC: restores deducted stock for every linked line item, logs the
+  // reversal, then deletes the invoice (and cascade-deletes its line items).
+  const { error } = await supabase.rpc('delete_invoice_with_restore', { p_id: id });
   if (error) throw error;
+}
+
+export async function updateInvoice(id: string, inv: Omit<Invoice, 'id' | 'createdAt' | 'number'>): Promise<Invoice> {
+  const { error } = await supabase.rpc('update_invoice', {
+    p_id: id,
+    p_customer_name: '',
+    p_customer_notes: inv.notes,
+    p_date: inv.date.slice(0, 10),
+    p_items: inv.items.map(it => ({
+      stone_id: it.stoneId ?? null,
+      name: it.name,
+      size: it.size,
+      packing: it.packing,
+      quantity: it.quantity,
+      rate: 0,
+      image_url: it.image ?? null,
+    })),
+  });
+  if (error) throw error;
+
+  const { data: full, error: fetchErr } = await supabase
+    .from('invoices')
+    .select('*, invoice_line_items(*)')
+    .eq('id', id)
+    .single();
+  if (fetchErr) throw fetchErr;
+  return mapInvoice(full as InvoiceRow);
 }
 
 // =========================================
@@ -615,8 +644,35 @@ export async function createReturnSlip(slip: Omit<ReturnSlip, 'id' | 'createdAt'
 }
 
 export async function deleteReturnSlip(id: string): Promise<void> {
-  const { error } = await supabase.from('return_slips').delete().eq('id', id);
+  // Atomic RPC: reverses the qty that was added back (re-deducts), logs it,
+  // then deletes the slip (cascade-deletes its line items).
+  const { error } = await supabase.rpc('delete_return_slip_with_rededuct', { p_id: id });
   if (error) throw error;
+}
+
+export async function updateReturnSlip(id: string, slip: Omit<ReturnSlip, 'id' | 'createdAt' | 'number'>): Promise<ReturnSlip> {
+  const { error } = await supabase.rpc('update_return_slip', {
+    p_id: id,
+    p_notes: slip.notes,
+    p_date: slip.date.slice(0, 10),
+    p_items: slip.items.map(it => ({
+      stone_id: it.stoneId ?? null,
+      name: it.name,
+      size: it.size,
+      packing: it.packing,
+      quantity: it.quantity,
+      image_url: it.image ?? null,
+    })),
+  });
+  if (error) throw error;
+
+  const { data: full, error: fetchErr } = await supabase
+    .from('return_slips')
+    .select('*, return_slip_line_items(*)')
+    .eq('id', id)
+    .single();
+  if (fetchErr) throw fetchErr;
+  return mapReturnSlip(full as ReturnSlipRow);
 }
 
 // =========================================
